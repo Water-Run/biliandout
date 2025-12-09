@@ -1,3 +1,4 @@
+# build.py
 """
 biliandout 构建脚本
 使用 PyInstaller 将应用打包为单文件可执行程序
@@ -13,30 +14,41 @@ from pathlib import Path
 def convert_png_to_ico(png_path: Path, ico_path: Path) -> bool:
     """
     将PNG图标转换为ICO格式
-    使用Pillow库进行转换
+    生成高质量多尺寸图标
     """
     try:
         from PIL import Image
 
         img = Image.open(png_path)
+        
+        # 确保源图像是RGBA模式
+        if img.mode != 'RGBA':
+            img = img.convert('RGBA')
+        
+        # 取最大正方形区域
+        size = min(img.width, img.height)
+        left = (img.width - size) // 2
+        top = (img.height - size) // 2
+        img = img.crop((left, top, left + size, top + size))
+        
+        # 放大到足够大的尺寸以保证质量
+        if img.width < 256:
+            img = img.resize((256, 256), Image.Resampling.LANCZOS)
 
-        # ICO文件支持多种尺寸，这里生成常用尺寸
-        sizes = [(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
-
-        # 创建多尺寸图标
+        # ICO文件需要的所有标准尺寸
+        sizes = [256, 128, 64, 48, 32, 24, 16]
+        
+        # 创建多尺寸图标列表
         icons = []
-        for size in sizes:
-            resized = img.resize(size, Image.Resampling.LANCZOS)
-            # 确保是RGBA模式
-            if resized.mode != 'RGBA':
-                resized = resized.convert('RGBA')
+        for s in sizes:
+            resized = img.resize((s, s), Image.Resampling.LANCZOS)
             icons.append(resized)
 
         # 保存为ICO格式
         icons[0].save(
             ico_path,
             format='ICO',
-            sizes=[(icon.width, icon.height) for icon in icons],
+            sizes=[(s, s) for s in sizes],
             append_images=icons[1:]
         )
 
@@ -44,11 +56,11 @@ def convert_png_to_ico(png_path: Path, ico_path: Path) -> bool:
         return True
 
     except ImportError:
-        print("警告: 未安装Pillow库，无法转换图标")
-        print("      安装方法: pip install Pillow")
+        print("错误: 未安装Pillow库")
+        print("安装方法: pip install Pillow")
         return False
     except Exception as e:
-        print(f"警告: 图标转换失败: {e}")
+        print(f"图标转换失败: {e}")
         return False
 
 
@@ -74,7 +86,8 @@ def build():
         sys.exit(1)
 
     if not icon_png.exists():
-        print(f"警告: 找不到图标文件 {icon_png}")
+        print(f"错误: 找不到图标文件 {icon_png}")
+        sys.exit(1)
 
     # 清理旧的构建文件
     print("=" * 50)
@@ -84,25 +97,21 @@ def build():
     for dir_path in [dist_dir, build_dir]:
         if dir_path.exists():
             shutil.rmtree(dir_path)
-            print(f"  已删除: {dir_path}")
+            print(f"已删除: {dir_path}")
 
     # 转换图标
     print("\n" + "=" * 50)
     print("转换图标文件...")
     print("=" * 50)
 
+    temp_dir = Path(tempfile.mkdtemp())
+    temp_ico_path = temp_dir / "logo.ico"
     icon_ico = None
-    temp_ico_path = None
 
-    if icon_png.exists():
-        # 在临时目录创建ICO文件
-        temp_dir = Path(tempfile.mkdtemp())
-        temp_ico_path = temp_dir / "logo.ico"
-
-        if convert_png_to_ico(icon_png, temp_ico_path):
-            icon_ico = temp_ico_path
-        else:
-            print("  将继续构建，但不设置EXE图标")
+    if convert_png_to_ico(icon_png, temp_ico_path):
+        icon_ico = temp_ico_path
+    else:
+        print("将继续构建，但不设置EXE图标")
 
     # 构建 PyInstaller 命令
     print("\n" + "=" * 50)
@@ -121,14 +130,13 @@ def build():
         f"--specpath={project_root}",
     ]
 
-    # 添加数据文件 (logo.png用于程序内显示)
+    # 添加数据文件
     if icon_png.exists():
-        # Windows使用分号分隔
         pyinstaller_args.extend([
             "--add-data", f"{icon_png};."
         ])
 
-    # 添加EXE图标 (需要ICO格式)
+    # 添加EXE图标
     if icon_ico and icon_ico.exists():
         pyinstaller_args.extend([
             "--icon", str(icon_ico)
@@ -174,13 +182,13 @@ def build():
         sys.exit(1)
     except FileNotFoundError:
         print("\n错误: 未找到 PyInstaller")
-        print("      安装方法: pip install pyinstaller")
+        print("安装方法: pip install pyinstaller")
         sys.exit(1)
     finally:
         # 清理临时ICO文件
-        if temp_ico_path and temp_ico_path.exists():
+        if temp_dir.exists():
             try:
-                shutil.rmtree(temp_ico_path.parent)
+                shutil.rmtree(temp_dir)
             except:
                 pass
 
@@ -204,7 +212,7 @@ def build():
     # 复制EXE到发布目录
     release_exe = release_dir / f"{app_name}.exe"
     shutil.copy2(exe_file, release_exe)
-    print(f"  已复制: {release_exe}")
+    print(f"已复制: {release_exe}")
 
     # 创建ZIP压缩包
     try:
@@ -215,29 +223,10 @@ def build():
             zf.write(release_exe, release_exe.name)
 
         zip_size_mb = zip_file.stat().st_size / (1024 * 1024)
-        print(f"  已创建: {zip_file} ({zip_size_mb:.2f} MB)")
+        print(f"已创建: {zip_file} ({zip_size_mb:.2f} MB)")
 
     except Exception as e:
-        print(f"  警告: 无法创建ZIP压缩包: {e}")
-
-    # 尝试创建RAR压缩包 (如果系统安装了RAR)
-    try:
-        rar_file = release_dir / "biliandout.rar"
-        result = subprocess.run(
-            ["rar", "a", "-ep1", "-m5", str(rar_file), str(release_exe)],
-            check=True,
-            capture_output=True,
-            text=True
-        )
-        rar_size_mb = rar_file.stat().st_size / (1024 * 1024)
-        print(f"  已创建: {rar_file} ({rar_size_mb:.2f} MB)")
-
-    except FileNotFoundError:
-        # RAR未安装，跳过
-        pass
-    except subprocess.CalledProcessError:
-        # RAR执行失败，跳过
-        pass
+        print(f"无法创建ZIP压缩包: {e}")
 
     # 完成
     print("\n" + "=" * 50)

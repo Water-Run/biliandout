@@ -12,7 +12,7 @@
 
 ## 如何安装  
 
-1. 从[Release]()下载`biliandout.rar`  
+1. 从[Release]()下载`biliandout.zip`  
 2. 解压, 运行`Android哔哩哔哩视频导出器.exe`. 由于采用单文件封装, 初次打开消耗一些时间是正常的  
 
 > 从源码自行构建: `py build.py`  
