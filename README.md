@@ -8,9 +8,11 @@
 
 > 项目封装了[biliffm4s](https://github.com/Water-Run/-m4s-Python-biliffm4s).  
 
-![运行示例]()  
+![运行示例](./README-DEMO.png)  
 
 ## 如何安装  
 
 1. 从[Release]()下载`biliandout.rar`  
 2. 解压, 运行`Android哔哩哔哩视频导出器.exe`. 由于采用单文件封装, 初次打开消耗一些时间是正常的  
+
+> 自行构建: `python build.py`  
