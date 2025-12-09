@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pdb
+*.egg-info/
+.eggs/
+dist/
+build/
+*.spec
+venv/
+.env/
+
+# PyInstaller / py2exe / cx_Freeze
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Qt / PyQt
+*.qrc.py
+*.qrc~
+*.pyqt5rc
+*.ui~
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PyCharm
+.idea/
+*.iml
+
+_release/
