@@ -13,52 +13,31 @@ from pathlib import Path
 
 def convert_png_to_ico(png_path: Path, ico_path: Path) -> bool:
     """
-    将PNG图标转换为ICO格式
-    生成高质量多尺寸图标
+    将 PNG 转换为高质量 ICO（多尺寸），保证 Windows 显示清晰
     """
     try:
         from PIL import Image
 
-        img = Image.open(png_path)
-        
-        # 确保源图像是RGBA模式
-        if img.mode != 'RGBA':
-            img = img.convert('RGBA')
-        
-        # 取最大正方形区域
+        img = Image.open(png_path).convert("RGBA")
+
+        # 裁剪为正方形（居中）
         size = min(img.width, img.height)
         left = (img.width - size) // 2
         top = (img.height - size) // 2
         img = img.crop((left, top, left + size, top + size))
-        
-        # 放大到足够大的尺寸以保证质量
-        if img.width < 256:
-            img = img.resize((256, 256), Image.Resampling.LANCZOS)
 
-        # ICO文件需要的所有标准尺寸
+        # ICO 要求的尺寸（从大到小）
         sizes = [256, 128, 64, 48, 32, 24, 16]
-        
-        # 创建多尺寸图标列表
-        icons = []
-        for s in sizes:
-            resized = img.resize((s, s), Image.Resampling.LANCZOS)
-            icons.append(resized)
 
-        # 保存为ICO格式
-        icons[0].save(
-            ico_path,
-            format='ICO',
-            sizes=[(s, s) for s in sizes],
-            append_images=icons[1:]
-        )
+        # 生成 icons 列表
+        icons = [img.resize((s, s), Image.Resampling.LANCZOS) for s in sizes]
+
+        # PIL 保存 ICO 的方式：只需要指定 sizes，Pillow 会自动生成多图层 ICO
+        img.save(ico_path, format="ICO", sizes=[(s, s) for s in sizes])
 
         print(f"图标转换成功: {ico_path}")
         return True
 
-    except ImportError:
-        print("错误: 未安装Pillow库")
-        print("安装方法: pip install Pillow")
-        return False
     except Exception as e:
         print(f"图标转换失败: {e}")
         return False
