@@ -60,7 +60,8 @@ logger.setLevel(logging.INFO)
 # ============================================================
 BILI_SOURCES: dict[str, dict[str, str]] = {
     "default": {"package": "tv.danmaku.bili", "name": "哔哩哔哩"},
-    "concept": {"package": "com.bilibili.app.blue", "name": "哔哩哔哩概念"},
+    "concept": {"package": "com.bilibili.app.blue", "name": "哔哩哔哩概念版"},
+    "international": {"package": "com.bilibili.app.in", "name": "哔哩哔哩国际版"},
 }
 
 VERSION = "1.0"
@@ -1248,7 +1249,7 @@ class AboutDialog(QDialog):
         """初始化关于对话框。"""
         super().__init__(parent)
         self.setWindowTitle("关于")
-        self.setFixedSize(320, 360)
+        self.setFixedSize(320, 325)
         self.setModal(True)
 
         layout = QVBoxLayout(self)
