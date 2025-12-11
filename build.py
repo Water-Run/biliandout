@@ -1,7 +1,7 @@
-# build.py
 """
 biliandout 构建脚本
 使用 PyInstaller 将应用打包为单文件可执行程序
+运行: python build.py
 """
 
 import subprocess
@@ -13,26 +13,22 @@ from pathlib import Path
 
 def convert_png_to_ico(png_path: Path, ico_path: Path) -> bool:
     """
-    将 PNG 转换为高质量 ICO（多尺寸），保证 Windows 显示清晰
+    将 PNG 转换为高质量 ICO（多尺寸）
     """
     try:
         from PIL import Image
 
         img = Image.open(png_path).convert("RGBA")
 
-        # 裁剪为正方形（居中）
         size = min(img.width, img.height)
         left = (img.width - size) // 2
         top = (img.height - size) // 2
         img = img.crop((left, top, left + size, top + size))
 
-        # ICO 要求的尺寸（从大到小）
         sizes = [256, 128, 64, 48, 32, 24, 16]
 
-        # 生成 icons 列表
         icons = [img.resize((s, s), Image.Resampling.LANCZOS) for s in sizes]
 
-        # PIL 保存 ICO 的方式：只需要指定 sizes，Pillow 会自动生成多图层 ICO
         img.save(ico_path, format="ICO", sizes=[(s, s) for s in sizes])
 
         print(f"图标转换成功: {ico_path}")
@@ -45,21 +41,17 @@ def convert_png_to_ico(png_path: Path, ico_path: Path) -> bool:
 
 def build():
     """执行构建"""
-    # 路径设置
     project_root = Path(__file__).parent
     source_dir = project_root / "biliandout"
     main_script = source_dir / "biliandout.py"
     icon_png = source_dir / "logo.png"
 
-    # 输出目录
     dist_dir = project_root / "dist"
     build_dir = project_root / "build"
     release_dir = project_root / "_release"
 
-    # 应用名称
     app_name = "Android哔哩哔哩视频导出器"
 
-    # 检查源文件
     if not main_script.exists():
         print(f"错误: 找不到主脚本 {main_script}")
         sys.exit(1)
@@ -68,7 +60,6 @@ def build():
         print(f"错误: 找不到图标文件 {icon_png}")
         sys.exit(1)
 
-    # 清理旧的构建文件
     print("=" * 50)
     print("清理旧的构建文件...")
     print("=" * 50)
@@ -78,7 +69,6 @@ def build():
             shutil.rmtree(dir_path)
             print(f"已删除: {dir_path}")
 
-    # 转换图标
     print("\n" + "=" * 50)
     print("转换图标文件...")
     print("=" * 50)
@@ -92,7 +82,6 @@ def build():
     else:
         print("将继续构建，但不设置EXE图标")
 
-    # 构建 PyInstaller 命令
     print("\n" + "=" * 50)
     print("开始PyInstaller构建...")
     print("=" * 50)
@@ -109,19 +98,16 @@ def build():
         f"--specpath={project_root}",
     ]
 
-    # 添加数据文件
     if icon_png.exists():
         pyinstaller_args.extend([
             "--add-data", f"{icon_png};."
         ])
 
-    # 添加EXE图标
     if icon_ico and icon_ico.exists():
         pyinstaller_args.extend([
             "--icon", str(icon_ico)
         ])
 
-    # 隐式导入
     hidden_imports = [
         "biliffm4s",
         "PyQt6",
@@ -133,10 +119,8 @@ def build():
     for module in hidden_imports:
         pyinstaller_args.extend(["--hidden-import", module])
 
-    # 添加主脚本
     pyinstaller_args.append(str(main_script))
 
-    # 打印构建命令
     print("\n构建命令:")
     for i, arg in enumerate(pyinstaller_args):
         if i == 0:
@@ -147,7 +131,6 @@ def build():
             print(f"    {arg} \\")
     print()
 
-    # 执行构建
     try:
         result = subprocess.run(
             pyinstaller_args,
@@ -164,14 +147,12 @@ def build():
         print("安装方法: pip install pyinstaller")
         sys.exit(1)
     finally:
-        # 清理临时ICO文件
         if temp_dir.exists():
             try:
                 shutil.rmtree(temp_dir)
             except:
                 pass
 
-    # 验证输出
     exe_file = dist_dir / f"{app_name}.exe"
     if not exe_file.exists():
         print(f"\n错误: 未找到输出文件 {exe_file}")
@@ -181,19 +162,16 @@ def build():
     print(f"\n输出文件: {exe_file}")
     print(f"文件大小: {exe_size_mb:.2f} MB")
 
-    # 创建发布包
     print("\n" + "=" * 50)
     print("创建发布包...")
     print("=" * 50)
 
     release_dir.mkdir(exist_ok=True)
 
-    # 复制EXE到发布目录
     release_exe = release_dir / f"{app_name}.exe"
     shutil.copy2(exe_file, release_exe)
     print(f"已复制: {release_exe}")
 
-    # 创建ZIP压缩包
     try:
         import zipfile
         zip_file = release_dir / "biliandout.zip"
@@ -207,7 +185,6 @@ def build():
     except Exception as e:
         print(f"无法创建ZIP压缩包: {e}")
 
-    # 完成
     print("\n" + "=" * 50)
     print("构建完成!")
     print("=" * 50)

@@ -1,9 +1,8 @@
 """
 Android哔哩哔哩视频导出器 (biliandout)
 PyQt Windows桌面端图形应用，读取Android设备哔哩哔哩缓存视频并导出为.mp4
+GitHub: https://github.com/Water-Run/biliandout
 """
-
-from __future__ import annotations
 
 import contextlib
 import hashlib
@@ -17,10 +16,10 @@ import tempfile
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
-from PyQt6.QtCore import QPoint, QSize, Qt, QObject, QThread, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QIcon, QImage, QPalette, QPixmap
+from PyQt6.QtCore import QSize, Qt, QObject, QThread, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QIcon, QPalette, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -37,7 +36,6 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QProgressBar,
     QSizePolicy,
-    QSpacerItem,
     QStatusBar,
     QTextBrowser,
     QVBoxLayout,
@@ -57,7 +55,7 @@ if not logger.handlers:
 logger.setLevel(logging.INFO)
 
 # ============================================================
-# 配置
+# 配置常量
 # ============================================================
 BILI_SOURCES: dict[str, dict[str, str]] = {
     "default": {"package": "tv.danmaku.bili", "name": "哔哩哔哩"},
@@ -78,6 +76,7 @@ except AttributeError:
 # 工具函数
 # ============================================================
 def safe_json_load(path: Path) -> dict[str, Any]:
+    """安全加载JSON文件，失败时返回空字典。"""
     try:
         with path.open("r", encoding="utf-8") as file:
             return json.load(file)
@@ -87,6 +86,7 @@ def safe_json_load(path: Path) -> dict[str, Any]:
 
 
 def remove_file(path: Path) -> None:
+    """安全删除文件，忽略所有错误。"""
     with contextlib.suppress(FileNotFoundError, PermissionError, OSError):
         path.unlink()
 
@@ -97,7 +97,8 @@ def run_command(
     timeout: float | None = None,
     capture_output: bool = True,
     text: bool = True,
-) -> subprocess.CompletedProcess:
+) -> subprocess.CompletedProcess[str]:
+    """执行命令并隐藏控制台窗口。"""
     return subprocess.run(
         command,
         timeout=timeout,
@@ -108,11 +109,12 @@ def run_command(
 
 
 def format_bytes_to_mb(size_bytes: int) -> float:
+    """将字节转换为MB。"""
     return size_bytes / (1024 * 1024)
 
 
 # ============================================================
-# 样式
+# 样式定义
 # ============================================================
 COLORS = {
     "primary": "#fb7299",
@@ -136,66 +138,66 @@ QMainWindow {{
 
 QGroupBox {{
     font-weight: bold;
-    font-size: 13px;
+    font-size: 11px;
     border: 1px solid {COLORS["border"]};
-    border-radius: 6px;
-    margin-top: 10px;
-    padding: 8px;
+    border-radius: 5px;
+    margin-top: 8px;
+    padding: 6px;
     background-color: {COLORS["surface"]};
 }}
 
 QGroupBox::title {{
     subcontrol-origin: margin;
-    left: 10px;
-    padding: 0 4px;
+    left: 8px;
+    padding: 0 3px;
     color: {COLORS["text"]};
 }}
 
 QLabel {{
     color: {COLORS["text"]};
-    font-size: 13px;
+    font-size: 11px;
 }}
 
 QLabel#mutedLabel {{
     color: {COLORS["text_muted"]};
-    font-size: 12px;
+    font-size: 10px;
 }}
 
 QLabel#pathLabel {{
     color: {COLORS["primary"]};
-    font-size: 12px;
+    font-size: 10px;
 }}
 
 QLabel#emptyHint {{
     color: {COLORS["text_secondary"]};
-    font-size: 13px;
-    line-height: 1.6;
+    font-size: 11px;
+    line-height: 1.5;
 }}
 
 QLabel#videoTitleLabel {{
-    font-size: 13px;
+    font-size: 11px;
     font-weight: bold;
     color: {COLORS["text"]};
 }}
 
 QLabel#videoInfoLabel {{
-    font-size: 12px;
+    font-size: 10px;
     color: {COLORS["text_secondary"]};
 }}
 
 QLabel#loadingStatusLabel {{
-    font-size: 12px;
+    font-size: 10px;
     color: {COLORS["text_secondary"]};
 }}
 
 QPushButton {{
     background-color: {COLORS["surface"]};
     border: 1px solid {COLORS["border"]};
-    border-radius: 4px;
-    padding: 6px 14px;
-    font-size: 13px;
+    border-radius: 3px;
+    padding: 4px 10px;
+    font-size: 11px;
     color: {COLORS["text"]};
-    min-height: 28px;
+    min-height: 22px;
 }}
 
 QPushButton:hover {{
@@ -218,9 +220,9 @@ QPushButton#primaryBtn {{
     color: white;
     border: none;
     font-weight: bold;
-    padding: 8px 20px;
-    font-size: 13px;
-    min-height: 32px;
+    padding: 5px 14px;
+    font-size: 11px;
+    min-height: 24px;
 }}
 
 QPushButton#primaryBtn:hover {{
@@ -240,7 +242,7 @@ QPushButton#successBtn {{
     color: white;
     border: none;
     font-weight: bold;
-    min-height: 28px;
+    min-height: 22px;
 }}
 
 QPushButton#successBtn:hover {{
@@ -256,7 +258,7 @@ QPushButton#pauseBtn {{
     color: white;
     border: none;
     font-weight: bold;
-    min-height: 28px;
+    min-height: 22px;
 }}
 
 QPushButton#pauseBtn:hover {{
@@ -266,11 +268,11 @@ QPushButton#pauseBtn:hover {{
 QComboBox {{
     background-color: {COLORS["surface"]};
     border: 1px solid {COLORS["border"]};
-    border-radius: 4px;
-    padding: 6px 10px;
-    font-size: 13px;
+    border-radius: 3px;
+    padding: 4px 8px;
+    font-size: 11px;
     color: {COLORS["text"]};
-    min-height: 28px;
+    min-height: 22px;
 }}
 
 QComboBox:hover {{
@@ -283,7 +285,7 @@ QComboBox:focus {{
 
 QComboBox::drop-down {{
     border: none;
-    width: 24px;
+    width: 20px;
 }}
 
 QComboBox QAbstractItemView {{
@@ -292,7 +294,7 @@ QComboBox QAbstractItemView {{
     selection-background-color: #fff0f5;
     selection-color: {COLORS["text"]};
     outline: none;
-    padding: 4px;
+    padding: 3px;
 }}
 
 QListWidget {{
@@ -302,7 +304,7 @@ QListWidget {{
 }}
 
 QListWidget::item {{
-    margin: 4px 0;
+    margin: 3px 0;
     padding: 0;
     border: none;
 }}
@@ -310,7 +312,7 @@ QListWidget::item {{
 QWidget#videoItem {{
     background-color: {COLORS["surface"]};
     border: 1px solid {COLORS["border"]};
-    border-radius: 8px;
+    border-radius: 6px;
 }}
 
 QWidget#videoItem[selected="true"] {{
@@ -320,23 +322,23 @@ QWidget#videoItem[selected="true"] {{
 
 QLabel#coverLabel {{
     border: 1px solid {COLORS["border"]};
-    border-radius: 6px;
+    border-radius: 4px;
     background-color: #fdfdfd;
 }}
 
 QProgressBar {{
     border: none;
-    border-radius: 4px;
+    border-radius: 3px;
     text-align: center;
     background-color: #e8e8e8;
-    font-size: 11px;
-    min-height: 20px;
-    max-height: 20px;
+    font-size: 9px;
+    min-height: 16px;
+    max-height: 16px;
 }}
 
 QProgressBar::chunk {{
     background-color: {COLORS["success"]};
-    border-radius: 4px;
+    border-radius: 3px;
 }}
 
 QProgressBar#scanProgress::chunk {{
@@ -346,31 +348,34 @@ QProgressBar#scanProgress::chunk {{
 QStatusBar {{
     background-color: {COLORS["surface"]};
     border-top: 1px solid {COLORS["border"]};
-    font-size: 12px;
+    font-size: 10px;
     color: {COLORS["text_secondary"]};
-    padding: 4px;
+    padding: 2px;
 }}
 
 QTextBrowser {{
     background-color: transparent;
     border: none;
-    font-size: 13px;
+    font-size: 11px;
     color: {COLORS["text"]};
 }}
 
 #emptyState {{
     background-color: #fafafa;
-    border-radius: 8px;
+    border-radius: 6px;
     border: 1px solid #ebebeb;
-    padding: 24px;
+    padding: 16px;
 }}
 """
+
 
 # ============================================================
 # 数据结构
 # ============================================================
 @dataclass(slots=True)
 class CachedVideo:
+    """表示一个缓存的视频文件。"""
+    
     folder_path: Path
     video_path: Path
     audio_path: Path
@@ -381,22 +386,25 @@ class CachedVideo:
     quality: str = ""
     resolution: str = ""
     frame_rate: str = ""
-    cover_path: Optional[Path] = None
+    cover_path: Path | None = None
 
     @property
     def display_title(self) -> str:
+        """返回显示用的标题。"""
         if self.part_title and self.part_title != self.title:
             return f"{self.title} - {self.part_title}"
         return self.title
 
     @property
     def size_display(self) -> str:
+        """返回格式化的文件大小。"""
         if self.size_mb >= 1024:
             return f"{self.size_mb / 1024:.2f} GB"
         return f"{self.size_mb:.1f} MB"
 
     @property
     def tech_info(self) -> str:
+        """返回技术信息字符串。"""
         parts: list[str] = []
         if self.resolution:
             parts.append(self.resolution)
@@ -408,32 +416,36 @@ class CachedVideo:
 
 
 class ScanState(Enum):
+    """扫描状态枚举。"""
     IDLE = auto()
     LOADING = auto()
     PAUSED = auto()
 
 
 # ============================================================
-# 高分屏友好的列表条目
+# 视频列表项组件
 # ============================================================
 class VideoListItemWidget(QWidget):
-    COVER_SIZE = QSize(120, 90)
+    """视频列表项的自定义Widget。"""
+    
+    COVER_SIZE = QSize(90, 68)
 
-    def __init__(self, video: CachedVideo, parent: Optional[QWidget] = None):
+    def __init__(self, video: CachedVideo, parent: QWidget | None = None) -> None:
+        """初始化视频列表项。"""
         super().__init__(parent)
         self.video = video
         self.setObjectName("videoItem")
         self.setProperty("selected", False)
-        self._cover_pixmap: Optional[QPixmap] = None
+        self._cover_pixmap: QPixmap | None = None
         self._setup_ui()
         self.update_content(video)
 
     def _setup_ui(self) -> None:
+        """设置UI组件。"""
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(12)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(8)
 
-        # 封面容器
         self.cover_label = QLabel()
         self.cover_label.setObjectName("coverLabel")
         self.cover_label.setFixedSize(self.COVER_SIZE)
@@ -441,15 +453,14 @@ class VideoListItemWidget(QWidget):
         self.cover_label.setVisible(False)
         layout.addWidget(self.cover_label, 0, Qt.AlignmentFlag.AlignTop)
 
-        # 文本信息
         text_layout = QVBoxLayout()
         text_layout.setContentsMargins(0, 0, 0, 0)
-        text_layout.setSpacing(4)
+        text_layout.setSpacing(2)
 
         self.title_label = QLabel()
         self.title_label.setObjectName("videoTitleLabel")
         self.title_label.setWordWrap(True)
-        self.title_label.setMinimumWidth(200)
+        self.title_label.setMinimumWidth(150)
 
         self.info_label = QLabel()
         self.info_label.setObjectName("videoInfoLabel")
@@ -470,6 +481,7 @@ class VideoListItemWidget(QWidget):
         layout.addLayout(text_layout, 1)
 
     def update_content(self, video: CachedVideo) -> None:
+        """更新显示内容。"""
         self.title_label.setText(video.display_title)
         info_parts = [video.size_display]
         if video.tech_info:
@@ -480,7 +492,8 @@ class VideoListItemWidget(QWidget):
         self.path_label.setText(str(video.folder_path))
         self._update_cover(video.cover_path)
 
-    def _update_cover(self, cover_path: Optional[Path]) -> None:
+    def _update_cover(self, cover_path: Path | None) -> None:
+        """更新封面图片。"""
         if cover_path and cover_path.exists():
             pixmap = QPixmap(str(cover_path))
             if not pixmap.isNull():
@@ -493,6 +506,7 @@ class VideoListItemWidget(QWidget):
         self.cover_label.setVisible(False)
 
     def _render_cover_pixmap(self) -> None:
+        """渲染封面图片（支持高DPI）。"""
         if not self._cover_pixmap:
             return
 
@@ -509,11 +523,13 @@ class VideoListItemWidget(QWidget):
         scaled.setDevicePixelRatio(device_ratio)
         self.cover_label.setPixmap(scaled)
 
-    def resizeEvent(self, event) -> None:  # type: ignore[override]
+    def resizeEvent(self, event) -> None:
+        """处理大小变化事件。"""
         super().resizeEvent(event)
         self._render_cover_pixmap()
 
     def apply_selection(self, selected: bool) -> None:
+        """应用选中状态样式。"""
         self.setProperty("selected", selected)
         self.style().unpolish(self)
         self.style().polish(self)
@@ -523,6 +539,8 @@ class VideoListItemWidget(QWidget):
 # 扫描工作线程
 # ============================================================
 class ScanWorker(QObject):
+    """扫描缓存视频的工作线程。"""
+    
     progress = pyqtSignal(int, int)
     found = pyqtSignal(object)
     finished = pyqtSignal(int)
@@ -533,32 +551,38 @@ class ScanWorker(QObject):
         device_id: str,
         device_type: str,
         source_key: str,
-        cover_cache_dir: Optional[Path] = None,
-    ):
+        cover_cache_dir: Path | None = None,
+    ) -> None:
+        """初始化扫描器。"""
         super().__init__()
         self.device_id = device_id
         self.device_type = device_type
         self.source_key = source_key
         self._cancelled = False
         self._paused = False
-        self.temp_dir: Optional[Path] = None
+        self.temp_dir: Path | None = None
         self.cover_cache_dir = cover_cache_dir
         if self.cover_cache_dir:
             self.cover_cache_dir.mkdir(parents=True, exist_ok=True)
 
     def cancel(self) -> None:
+        """取消扫描。"""
         self._cancelled = True
 
     def pause(self) -> None:
+        """暂停扫描。"""
         self._paused = True
 
     def resume(self) -> None:
+        """恢复扫描。"""
         self._paused = False
 
     def is_paused(self) -> bool:
+        """返回是否暂停。"""
         return self._paused
 
     def run(self) -> None:
+        """执行扫描任务。"""
         count = 0
         try:
             self.temp_dir = Path(tempfile.mkdtemp())
@@ -566,7 +590,7 @@ class ScanWorker(QObject):
                 count = self._scan_adb()
             else:
                 count = self._scan_drive()
-        except Exception as exc:  # pragma: no cover
+        except Exception as exc:
             logger.exception("扫描过程中出错")
             self.error.emit(f"扫描错误: {str(exc)[:50]}")
         finally:
@@ -575,10 +599,12 @@ class ScanWorker(QObject):
             self.finished.emit(count)
 
     def _wait_if_paused(self) -> None:
+        """如果暂停则等待。"""
         while self._paused and not self._cancelled:
             QThread.msleep(100)
 
     def _scan_adb(self) -> int:
+        """通过ADB扫描设备。"""
         count = 0
         adb = DeviceScanner.find_adb()
         source = BILI_SOURCES.get(self.source_key)
@@ -614,6 +640,7 @@ class ScanWorker(QObject):
     def _find_m4s_adb(
         self, adb: str, remote_path: str, root_folder: str
     ) -> list[CachedVideo]:
+        """通过ADB查找m4s文件。"""
         videos: list[CachedVideo] = []
         if self._cancelled:
             return videos
@@ -642,7 +669,8 @@ class ScanWorker(QObject):
 
     def _parse_video_adb(
         self, adb: str, remote_path: str, files: list[str], root_folder: str
-    ) -> Optional[CachedVideo]:
+    ) -> CachedVideo | None:
+        """解析ADB设备上的视频信息。"""
         title = root_folder
         part_title = ""
         bvid = ""
@@ -658,7 +686,6 @@ class ScanWorker(QObject):
                 resolution, frame_rate = self._parse_index_json(data)
                 remove_file(local_index)
 
-        # 向上查找 entry.json 和 cover.jpg
         current_path = remote_path
         for _ in range(5):
             entry_remote = f"{current_path}/entry.json"
@@ -671,8 +698,6 @@ class ScanWorker(QObject):
                 part_title = page_data.get("part", "")
                 quality = self._get_quality_name(data.get("quality", 0))
                 remove_file(local_entry)
-                
-                # 在找到entry.json的目录查找cover.jpg
                 cover_path = self._pull_cover_adb(adb, current_path, bvid or root_folder)
                 break
             parts = current_path.rsplit("/", 1)
@@ -696,7 +721,8 @@ class ScanWorker(QObject):
             cover_path=cover_path,
         )
 
-    def _pull_temp_file(self, adb: str, remote_path: str) -> Optional[Path]:
+    def _pull_temp_file(self, adb: str, remote_path: str) -> Path | None:
+        """从设备拉取临时文件。"""
         if not self.temp_dir:
             return None
         local_path = self.temp_dir / Path(remote_path).name
@@ -710,6 +736,7 @@ class ScanWorker(QObject):
         return None
 
     def _calc_remote_size(self, adb: str, remote_path: str) -> float:
+        """计算远程文件大小。"""
         try:
             result = run_command(
                 [
@@ -734,7 +761,8 @@ class ScanWorker(QObject):
 
     def _pull_cover_adb(
         self, adb: str, remote_path: str, identifier: str
-    ) -> Optional[Path]:
+    ) -> Path | None:
+        """从ADB设备拉取封面图片。"""
         if not self.cover_cache_dir:
             return None
         cover_remote = f"{remote_path}/cover.jpg"
@@ -753,6 +781,7 @@ class ScanWorker(QObject):
         return None
 
     def _scan_drive(self) -> int:
+        """扫描本地驱动器。"""
         count = 0
         source = BILI_SOURCES.get(self.source_key)
         if not source:
@@ -776,6 +805,7 @@ class ScanWorker(QObject):
         return count
 
     def _find_m4s_local(self, folder: Path, root_folder: str) -> list[CachedVideo]:
+        """在本地目录查找m4s文件。"""
         videos: list[CachedVideo] = []
         if self._cancelled:
             return videos
@@ -794,21 +824,21 @@ class ScanWorker(QObject):
                         videos.extend(self._find_m4s_local(sub, root_folder))
         return videos
 
-    def _parse_video_local(self, folder: Path, root_folder: str) -> Optional[CachedVideo]:
+    def _parse_video_local(self, folder: Path, root_folder: str) -> CachedVideo | None:
+        """解析本地视频信息。"""
         title = root_folder
         part_title = ""
         bvid = ""
         quality = ""
         resolution = ""
         frame_rate = ""
-        cover_path: Optional[Path] = None
+        cover_path: Path | None = None
 
         index_json = folder / "index.json"
         if index_json.exists():
             data = safe_json_load(index_json)
             resolution, frame_rate = self._parse_index_json(data)
 
-        # 向上查找 entry.json 和 cover.jpg
         current = folder
         for _ in range(5):
             entry = current / "entry.json"
@@ -819,8 +849,6 @@ class ScanWorker(QObject):
                 page_data = data.get("page_data", {})
                 part_title = page_data.get("part", "")
                 quality = self._get_quality_name(data.get("quality", 0))
-                
-                # 在找到entry.json的目录查找cover.jpg
                 cover_file = current / "cover.jpg"
                 if cover_file.exists():
                     cover_path = cover_file
@@ -851,6 +879,7 @@ class ScanWorker(QObject):
         )
 
     def _parse_index_json(self, data: dict[str, Any]) -> tuple[str, str]:
+        """解析index.json获取分辨率和帧率。"""
         resolution = ""
         frame_rate = ""
         try:
@@ -878,6 +907,7 @@ class ScanWorker(QObject):
 
     @staticmethod
     def _get_quality_name(quality_id: int) -> str:
+        """根据质量ID获取质量名称。"""
         quality_map = {
             127: "8K",
             126: "杜比视界",
@@ -900,10 +930,13 @@ class ScanWorker(QObject):
 # 设备扫描器
 # ============================================================
 class DeviceScanner:
-    _adb_path: Optional[str] = None
+    """设备扫描和操作工具类。"""
+    
+    _adb_path: str | None = None
 
     @classmethod
-    def find_adb(cls) -> Optional[str]:
+    def find_adb(cls) -> str | None:
+        """查找ADB可执行文件路径。"""
         if cls._adb_path:
             return cls._adb_path
 
@@ -932,6 +965,7 @@ class DeviceScanner:
 
     @classmethod
     def get_adb_devices(cls) -> list[tuple[str, str]]:
+        """获取通过ADB连接的设备列表。"""
         devices: list[tuple[str, str]] = []
         adb = cls.find_adb()
         if not adb:
@@ -959,6 +993,7 @@ class DeviceScanner:
 
     @classmethod
     def get_drive_devices(cls) -> list[tuple[str, str]]:
+        """获取包含哔哩哔哩缓存的驱动器列表。"""
         devices: list[tuple[str, str]] = []
         for letter in "DEFGHIJKLMNOPQRSTUVWXYZ":
             drive_path = Path(f"{letter}:/")
@@ -978,6 +1013,7 @@ class DeviceScanner:
 
     @classmethod
     def get_connected_devices(cls) -> list[tuple[str, str, str]]:
+        """获取所有已连接设备（包括ADB和本地驱动器）。"""
         devices: list[tuple[str, str, str]] = []
         devices.extend((dev_id, dev_name, "adb") for dev_id, dev_name in cls.get_adb_devices())
         devices.extend((dev_id, dev_name, "drive") for dev_id, dev_name in cls.get_drive_devices())
@@ -987,6 +1023,7 @@ class DeviceScanner:
     def pull_and_convert(
         cls, video: CachedVideo, output_path: Path, device_id: str, device_type: str
     ) -> bool:
+        """拉取视频文件并转换为MP4。"""
         if device_type == "drive":
             return biliffm4s.combine(str(video.folder_path), str(output_path))
         if device_type == "adb":
@@ -1023,6 +1060,8 @@ class DeviceScanner:
 # 转换工作线程
 # ============================================================
 class ConvertWorker(QObject):
+    """视频转换工作线程。"""
+    
     progress = pyqtSignal(int, int, str)
     finished = pyqtSignal(int, int)
     error = pyqtSignal(str)
@@ -1033,7 +1072,8 @@ class ConvertWorker(QObject):
         output_dir: Path,
         device_id: str,
         device_type: str,
-    ):
+    ) -> None:
+        """初始化转换器。"""
         super().__init__()
         self.videos = videos
         self.output_dir = output_dir
@@ -1042,9 +1082,11 @@ class ConvertWorker(QObject):
         self._cancelled = False
 
     def cancel(self) -> None:
+        """取消转换。"""
         self._cancelled = True
 
     def run(self) -> None:
+        """执行转换任务。"""
         success_count = 0
         total = len(self.videos)
 
@@ -1053,8 +1095,8 @@ class ConvertWorker(QObject):
                 break
 
             title_short = (
-                f"{video.display_title[:30]}..."
-                if len(video.display_title) > 30
+                f"{video.display_title[:25]}..."
+                if len(video.display_title) > 25
                 else video.display_title
             )
             self.progress.emit(index + 1, total, f"转换: {title_short}")
@@ -1075,7 +1117,7 @@ class ConvertWorker(QObject):
                     success_count += 1
                 else:
                     self.error.emit(f"转换失败: {title_short}")
-            except Exception as exc:  # pragma: no cover
+            except Exception as exc:
                 logger.exception("转换失败")
                 self.error.emit(f"错误: {str(exc)[:50]}")
 
@@ -1083,6 +1125,7 @@ class ConvertWorker(QObject):
 
     @staticmethod
     def _sanitize_filename(filename: str) -> str:
+        """清理文件名中的非法字符。"""
         invalid_chars = '<>:"/\\|?*'
         for char in invalid_chars:
             filename = filename.replace(char, "_")
@@ -1094,28 +1137,29 @@ class ConvertWorker(QObject):
 # 关于对话框
 # ============================================================
 class AboutDialog(QDialog):
-    def __init__(self, parent: Optional[QWidget] = None, icon_path: Optional[Path] = None):
+    """关于对话框。"""
+    
+    def __init__(self, parent: QWidget | None = None, icon_path: Path | None = None) -> None:
+        """初始化关于对话框。"""
         super().__init__(parent)
         self.setWindowTitle("关于")
-        self.setFixedSize(380, 420)
+        self.setFixedSize(320, 360)
         self.setModal(True)
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(16)
-        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(12)
+        layout.setContentsMargins(18, 18, 18, 18)
 
-        # 头部
         header = QHBoxLayout()
-        header.setSpacing(16)
+        header.setSpacing(12)
 
         if icon_path and icon_path.exists():
             logo = QLabel()
-            logo.setFixedSize(72, 72)
+            logo.setFixedSize(56, 56)
             pixmap = QPixmap(str(icon_path))
             if not pixmap.isNull():
-                # 高DPI渲染
                 device_ratio = self.devicePixelRatioF()
-                target_size = QSize(72, 72) * device_ratio
+                target_size = QSize(56, 56) * device_ratio
                 scaled = pixmap.scaled(
                     target_size,
                     Qt.AspectRatioMode.KeepAspectRatio,
@@ -1126,14 +1170,14 @@ class AboutDialog(QDialog):
             header.addWidget(logo)
 
         title_box = QVBoxLayout()
-        title_box.setSpacing(4)
+        title_box.setSpacing(3)
 
         title = QLabel("Android哔哩哔哩视频导出器")
-        title.setFont(QFont("Microsoft YaHei", 14, QFont.Weight.Bold))
+        title.setFont(QFont("Microsoft YaHei", 11, QFont.Weight.Bold))
         title_box.addWidget(title)
 
         version = QLabel(f"版本 {VERSION}")
-        version.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 12px;")
+        version.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 10px;")
         title_box.addWidget(version)
 
         header.addLayout(title_box)
@@ -1151,18 +1195,18 @@ class AboutDialog(QDialog):
         info.setHtml(
             f"""
         <style>
-            body {{ font-family: "Microsoft YaHei", sans-serif; font-size: 13px; line-height: 1.8; }}
-            .row {{ margin: 6px 0; }}
+            body {{ font-family: "Microsoft YaHei", sans-serif; font-size: 11px; line-height: 1.6; }}
+            .row {{ margin: 4px 0; }}
             .label {{ color: {COLORS["text_secondary"]}; }}
             a {{ color: {COLORS["primary"]}; text-decoration: none; }}
             a:hover {{ text-decoration: underline; }}
         </style>    
         <div class="row"><span class="label">作者:</span> WaterRun</div>
-        <div class="row"><span class="label">概述:</span> 扫描接入的安卓设备的哔哩哔哩缓存目录并导出. 通过对<a href="https://github.com/Water-Run/-m4s-Python-biliffm4s/tree/master">biliffm4s</a>封装实现开箱即用, 其本身是对<a href="https://ffmpeg.org/">FFMpeg</a>的封装</div>
-        <div class="row"><span class="label">适用于:</span> Windows 64位</div>    
-        <div class="row"><span class="label">协作:</span> Claude-Opus-4.5, Nano-Banana-Pro</div>
-        <div class="row"><span class="label">许可证:</span> GNU General Public License v3.0</div>
-        <div class="row"><span class="label">技术栈:</span> Python, PyQt, PyInstaller, biliffm4s, FFmpeg</div>
+        <div class="row"><span class="label">协作:</span> Claude Opus 4.5, Nano Banana Pro</div>
+        <div class="row"><span class="label">概述:</span> 扫描接入的安卓设备的哔哩哔哩缓存目录并导出. 通过对<a href="https://github.com/Water-Run/-m4s-Python-biliffm4s/tree/master">biliffm4s</a>封装实现开箱即用</div>
+        <div class="row"><span class="label">可运行:</span> Windows 64位</div>    
+        <div class="row"><span class="label">许可证:</span> GNU GPL v3.0</div>
+        <div class="row"><span class="label">技术栈:</span> PyQT, Pyinstaller, Python, biliffm4s, FFMpeg</div>
         <div class="row"><span class="label">链接:</span> <a href="https://github.com/Water-Run/biliandout">GitHub</a></div>
         """
         )
@@ -1171,7 +1215,7 @@ class AboutDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         close_btn = QPushButton("关闭")
-        close_btn.setFixedSize(80, 32)
+        close_btn.setFixedSize(60, 26)
         close_btn.clicked.connect(self.close)
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
@@ -1180,16 +1224,20 @@ class AboutDialog(QDialog):
 # ============================================================
 # 页面栈管理
 # ============================================================
-class QWidgetStack:
-    def __init__(self):
+class WidgetStack:
+    """简单的Widget栈管理器。"""
+    
+    def __init__(self) -> None:
+        """初始化栈管理器。"""
         self.container = QWidget()
         self.layout = QVBoxLayout(self.container)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(0)
         self.pages: dict[str, QWidget] = {}
-        self.current_key: Optional[str] = None
+        self.current_key: str | None = None
 
     def add_page(self, key: str, widget: QWidget) -> None:
+        """添加页面。"""
         self.pages[key] = widget
         widget.setVisible(False)
         self.layout.addWidget(widget)
@@ -1197,6 +1245,7 @@ class QWidgetStack:
             self.show_page(key)
 
     def show_page(self, key: str) -> None:
+        """显示指定页面。"""
         if key == self.current_key:
             return
         if self.current_key and self.current_key in self.pages:
@@ -1210,16 +1259,18 @@ class QWidgetStack:
 # 主窗口
 # ============================================================
 class MainWindow(QMainWindow):
-    def __init__(self):
+    """应用程序主窗口。"""
+    
+    def __init__(self) -> None:
+        """初始化主窗口。"""
         super().__init__()
         self.videos: list[CachedVideo] = []
-        self.convert_thread: Optional[QThread] = None
-        self.convert_worker: Optional[ConvertWorker] = None
-        self.scan_thread: Optional[QThread] = None
-        self.scan_worker: Optional[ScanWorker] = None
+        self.convert_thread: QThread | None = None
+        self.convert_worker: ConvertWorker | None = None
+        self.scan_thread: QThread | None = None
+        self.scan_worker: ScanWorker | None = None
         self.scan_state = ScanState.IDLE
 
-        # 自动刷新定时器
         self.auto_refresh_timer = QTimer(self)
         self.auto_refresh_timer.timeout.connect(self._auto_refresh_devices)
 
@@ -1243,16 +1294,16 @@ class MainWindow(QMainWindow):
         self._start_auto_refresh_if_needed()
 
     @property
-    def selected_device(self) -> Optional[tuple[str, str]]:
+    def selected_device(self) -> tuple[str, str] | None:
+        """返回当前选中的设备信息。"""
         data = self.device_combo.currentData()
-        if not data:
-            return None
-        return data
+        return data if data else None
 
     def _setup_ui(self) -> None:
+        """设置用户界面。"""
         self.setWindowTitle("Android哔哩哔哩视频导出器")
-        self.setMinimumSize(620, 700)
-        self.resize(680, 760)
+        self.setMinimumSize(420, 480)
+        self.resize(460, 520)
 
         if self.icon_path.exists():
             pixmap = QPixmap(str(self.icon_path))
@@ -1265,61 +1316,57 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         main_layout = QVBoxLayout(central)
-        main_layout.setSpacing(12)
-        main_layout.setContentsMargins(16, 16, 16, 16)
+        main_layout.setSpacing(8)
+        main_layout.setContentsMargins(10, 10, 10, 10)
 
         # ========== 设备组 ==========
         device_group = QGroupBox("设备")
         device_layout = QVBoxLayout(device_group)
-        device_layout.setSpacing(10)
-        device_layout.setContentsMargins(12, 16, 12, 12)
+        device_layout.setSpacing(6)
+        device_layout.setContentsMargins(8, 12, 8, 8)
 
         dev_row = QHBoxLayout()
-        dev_row.setSpacing(10)
+        dev_row.setSpacing(6)
 
         dev_label = QLabel("设备:")
-        dev_label.setFixedWidth(50)
+        dev_label.setFixedWidth(40)
         dev_row.addWidget(dev_label)
 
         self.device_combo = QComboBox()
-        self.device_combo.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
+        self.device_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         dev_row.addWidget(self.device_combo)
 
         self.refresh_btn = QPushButton("刷新")
-        self.refresh_btn.setFixedSize(70, 32)
+        self.refresh_btn.setFixedWidth(50)
         dev_row.addWidget(self.refresh_btn)
         device_layout.addLayout(dev_row)
 
         src_row = QHBoxLayout()
-        src_row.setSpacing(10)
+        src_row.setSpacing(6)
 
-        src_label = QLabel("扫描源:")
-        src_label.setFixedWidth(50)
+        src_label = QLabel("来源:")
+        src_label.setFixedWidth(40)
         src_row.addWidget(src_label)
 
         self.source_combo = QComboBox()
         for key, info in BILI_SOURCES.items():
             self.source_combo.addItem(info["name"], key)
-        self.source_combo.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
+        self.source_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         src_row.addWidget(self.source_combo)
 
-        self.scan_btn = QPushButton("扫描载入")
+        self.scan_btn = QPushButton("加载")
         self.scan_btn.setObjectName("successBtn")
-        self.scan_btn.setFixedSize(90, 32)
+        self.scan_btn.setFixedWidth(50)
         src_row.addWidget(self.scan_btn)
 
         self.scan_pause_btn = QPushButton("暂停")
         self.scan_pause_btn.setObjectName("pauseBtn")
-        self.scan_pause_btn.setFixedSize(70, 32)
+        self.scan_pause_btn.setFixedWidth(50)
         self.scan_pause_btn.setVisible(False)
         src_row.addWidget(self.scan_pause_btn)
 
         self.scan_cancel_btn = QPushButton("取消")
-        self.scan_cancel_btn.setFixedSize(70, 32)
+        self.scan_cancel_btn.setFixedWidth(50)
         self.scan_cancel_btn.setVisible(False)
         src_row.addWidget(self.scan_cancel_btn)
 
@@ -1329,17 +1376,17 @@ class MainWindow(QMainWindow):
         # ========== 视频组 ==========
         video_group = QGroupBox("缓存视频")
         video_group_layout = QVBoxLayout(video_group)
-        video_group_layout.setSpacing(8)
-        video_group_layout.setContentsMargins(12, 12, 12, 12)
+        video_group_layout.setSpacing(6)
+        video_group_layout.setContentsMargins(8, 8, 8, 8)
 
-        self.video_stack = QWidgetStack()
+        self.video_stack = WidgetStack()
         video_group_layout.addWidget(self.video_stack.container, 1)
 
         # 空状态页
         self.empty_state_widget = QWidget()
         self.empty_state_widget.setObjectName("emptyState")
         empty_layout = QVBoxLayout(self.empty_state_widget)
-        empty_layout.setContentsMargins(20, 40, 20, 40)
+        empty_layout.setContentsMargins(14, 24, 14, 24)
         self.empty_hint = QLabel()
         self.empty_hint.setObjectName("emptyHint")
         self.empty_hint.setWordWrap(True)
@@ -1350,24 +1397,22 @@ class MainWindow(QMainWindow):
         # 加载页
         self.loading_widget = QWidget()
         loading_layout = QVBoxLayout(self.loading_widget)
-        loading_layout.setContentsMargins(40, 60, 40, 60)
-        loading_layout.setSpacing(12)
+        loading_layout.setContentsMargins(24, 36, 24, 36)
+        loading_layout.setSpacing(8)
 
         loading_layout.addStretch(1)
 
-        # 进度条居中
         progress_container = QHBoxLayout()
         progress_container.addStretch(1)
         self.loading_progress = QProgressBar()
         self.loading_progress.setObjectName("scanProgress")
         self.loading_progress.setRange(0, 0)
         self.loading_progress.setTextVisible(False)
-        self.loading_progress.setFixedSize(300, 24)
+        self.loading_progress.setFixedSize(200, 18)
         progress_container.addWidget(self.loading_progress)
         progress_container.addStretch(1)
         loading_layout.addLayout(progress_container)
 
-        # 加载状态文本
         self.loading_status_label = QLabel("正在扫描...")
         self.loading_status_label.setObjectName("loadingStatusLabel")
         self.loading_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1379,7 +1424,7 @@ class MainWindow(QMainWindow):
         # 视频列表页
         self.video_list = QListWidget()
         self.video_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
-        self.video_list.setSpacing(6)
+        self.video_list.setSpacing(4)
         self.video_stack.add_page("list", self.video_list)
 
         main_layout.addWidget(video_group, 1)
@@ -1387,18 +1432,18 @@ class MainWindow(QMainWindow):
         # ========== 操作区 ==========
         action_widget = QWidget()
         action_layout = QVBoxLayout(action_widget)
-        action_layout.setSpacing(10)
+        action_layout.setSpacing(6)
         action_layout.setContentsMargins(0, 0, 0, 0)
 
         list_actions = QHBoxLayout()
-        list_actions.setSpacing(8)
+        list_actions.setSpacing(6)
 
         self.select_all_btn = QPushButton("全选")
-        self.select_all_btn.setFixedSize(70, 32)
+        self.select_all_btn.setFixedWidth(50)
         list_actions.addWidget(self.select_all_btn)
 
-        self.deselect_btn = QPushButton("清除选择")
-        self.deselect_btn.setFixedSize(80, 32)
+        self.deselect_btn = QPushButton("清除")
+        self.deselect_btn.setFixedWidth(50)
         list_actions.addWidget(self.deselect_btn)
 
         list_actions.addStretch()
@@ -1410,23 +1455,21 @@ class MainWindow(QMainWindow):
         action_layout.addLayout(list_actions)
 
         output_row = QHBoxLayout()
-        output_row.setSpacing(10)
+        output_row.setSpacing(6)
 
-        out_label = QLabel("输出目录:")
-        out_label.setFixedWidth(65)
+        out_label = QLabel("输出:")
+        out_label.setFixedWidth(40)
         output_row.addWidget(out_label)
 
         self.output_label = QLabel()
         self.output_label.setObjectName("pathLabel")
-        self.output_label.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
-        self.output_label.setMinimumWidth(100)
+        self.output_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.output_label.setMinimumWidth(80)
         self._update_output_label()
         output_row.addWidget(self.output_label, 1)
 
         self.browse_btn = QPushButton("浏览")
-        self.browse_btn.setFixedSize(70, 32)
+        self.browse_btn.setFixedWidth(50)
         output_row.addWidget(self.browse_btn)
 
         action_layout.addLayout(output_row)
@@ -1434,50 +1477,53 @@ class MainWindow(QMainWindow):
 
         self.export_progress_bar = QProgressBar()
         self.export_progress_bar.setVisible(False)
-        self.export_progress_bar.setFixedHeight(24)
+        self.export_progress_bar.setFixedHeight(18)
         main_layout.addWidget(self.export_progress_bar)
 
         # ========== 底部按钮 ==========
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(10)
+        btn_row.setSpacing(8)
 
         self.about_btn = QPushButton("关于")
-        self.about_btn.setFixedSize(70, 36)
+        self.about_btn.setFixedWidth(50)
         btn_row.addWidget(self.about_btn)
 
         btn_row.addStretch()
 
         self.export_cancel_btn = QPushButton("取消")
-        self.export_cancel_btn.setFixedSize(70, 36)
+        self.export_cancel_btn.setFixedWidth(50)
         self.export_cancel_btn.setVisible(False)
         btn_row.addWidget(self.export_cancel_btn)
 
         self.export_btn = QPushButton("导出选中")
         self.export_btn.setObjectName("primaryBtn")
-        self.export_btn.setFixedSize(110, 36)
+        self.export_btn.setFixedWidth(80)
         btn_row.addWidget(self.export_btn)
 
         main_layout.addLayout(btn_row)
 
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("就绪，点击「开始加载」手动读取缓存")
+        self.status_bar.showMessage("就绪，点击「加载」读取缓存")
 
         self._refresh_video_view()
 
     def _update_output_label(self) -> None:
+        """更新输出目录标签显示。"""
         display = str(self.output_dir)
         metrics = self.output_label.fontMetrics()
-        available_width = max(200, self.output_label.width() - 10)
+        available_width = max(120, self.output_label.width() - 8)
         elided = metrics.elidedText(display, Qt.TextElideMode.ElideLeft, available_width)
         self.output_label.setText(elided)
         self.output_label.setToolTip(str(self.output_dir))
 
     def resizeEvent(self, event) -> None:
+        """处理窗口大小变化。"""
         super().resizeEvent(event)
         self._update_output_label()
 
     def _connect_signals(self) -> None:
+        """连接信号与槽。"""
         self.refresh_btn.clicked.connect(self._refresh_devices)
         self.scan_btn.clicked.connect(self._scan_videos)
         self.browse_btn.clicked.connect(self._browse_output)
@@ -1492,14 +1538,14 @@ class MainWindow(QMainWindow):
         self.video_list.itemSelectionChanged.connect(self._sync_item_selection_styles)
 
     def _start_auto_refresh_if_needed(self) -> None:
-        """未连接设备时启动自动刷新"""
+        """未连接设备时启动自动刷新。"""
         if not self.selected_device:
             self.auto_refresh_timer.start(1000)
         else:
             self.auto_refresh_timer.stop()
 
     def _auto_refresh_devices(self) -> None:
-        """自动刷新设备（静默方式）"""
+        """自动刷新设备（静默方式）。"""
         if self.scan_state != ScanState.IDLE:
             return
         if self.convert_thread and self.convert_thread.isRunning():
@@ -1509,13 +1555,12 @@ class MainWindow(QMainWindow):
         current_data = self.device_combo.currentData()
 
         if devices and not current_data:
-            # 发现新设备，更新列表
             self._refresh_devices()
         elif not devices and current_data:
-            # 设备断开
             self._refresh_devices()
 
     def _refresh_devices(self) -> None:
+        """刷新设备列表。"""
         self.device_combo.clear()
         self.videos.clear()
         self.video_list.clear()
@@ -1529,14 +1574,13 @@ class MainWindow(QMainWindow):
         else:
             for dev_id, dev_name, dev_type in devices:
                 self.device_combo.addItem(dev_name, (dev_id, dev_type))
-            self.status_bar.showMessage(
-                f"检测到 {len(devices)} 个设备，请手动点击「开始加载」读取缓存"
-            )
+            self.status_bar.showMessage(f"检测到 {len(devices)} 个设备")
             self.auto_refresh_timer.stop()
         self._refresh_video_view()
         self._update_action_states()
 
     def _on_device_changed(self, _: int) -> None:
+        """处理设备切换。"""
         self.videos.clear()
         self.video_list.clear()
         self._update_counts()
@@ -1546,9 +1590,10 @@ class MainWindow(QMainWindow):
         if not self.selected_device:
             self.status_bar.showMessage("未连接设备，正在自动检测...")
         else:
-            self.status_bar.showMessage("设备就绪，需手动点击「开始加载」读取缓存")
+            self.status_bar.showMessage("设备就绪")
 
     def _scan_videos(self) -> None:
+        """开始扫描视频。"""
         if self.scan_state != ScanState.IDLE:
             return
 
@@ -1566,9 +1611,7 @@ class MainWindow(QMainWindow):
         self._clear_cover_cache()
 
         self.scan_thread = QThread()
-        self.scan_worker = ScanWorker(
-            device_id, device_type, source_key, COVER_CACHE_DIR
-        )
+        self.scan_worker = ScanWorker(device_id, device_type, source_key, COVER_CACHE_DIR)
         self.scan_worker.moveToThread(self.scan_thread)
 
         self.scan_thread.started.connect(self.scan_worker.run)
@@ -1585,56 +1628,63 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("正在加载缓存视频...")
 
     def _toggle_scan_pause(self) -> None:
+        """切换扫描暂停状态。"""
         if not self.scan_worker:
             return
         if self.scan_worker.is_paused():
             self.scan_worker.resume()
             self.scan_pause_btn.setText("暂停")
             self._set_scan_state(ScanState.LOADING)
-            self.status_bar.showMessage("继续加载缓存视频...")
+            self.status_bar.showMessage("继续加载...")
         else:
             self.scan_worker.pause()
             self.scan_pause_btn.setText("继续")
             self._set_scan_state(ScanState.PAUSED)
-            self.status_bar.showMessage("加载已暂停")
+            self.status_bar.showMessage("已暂停")
 
     def _cancel_scan(self) -> None:
+        """取消扫描。"""
         if self.scan_worker:
             self.scan_worker.cancel()
-            self.status_bar.showMessage("正在取消加载...")
+            self.status_bar.showMessage("正在取消...")
 
     def _on_scan_progress(self, current: int, total: int) -> None:
+        """处理扫描进度。"""
         if total <= 0:
             self.loading_progress.setRange(0, 0)
             self.loading_status_label.setText("正在扫描...")
         else:
             self.loading_progress.setRange(0, total)
             self.loading_progress.setValue(current)
-            self.loading_status_label.setText(f"正在扫描第 {current}/{total} 个文件夹")
-        self.status_bar.showMessage(f"扫描文件夹 ({current}/{total})")
+            self.loading_status_label.setText(f"扫描 {current}/{total}")
+        self.status_bar.showMessage(f"扫描 ({current}/{total})")
 
     def _on_video_found(self, video: CachedVideo) -> None:
+        """处理发现的视频。"""
         self.videos.append(video)
         self._add_video_item(video)
         self._update_counts()
 
     def _on_scan_finished(self, count: int) -> None:
+        """处理扫描完成。"""
         self._cleanup_scan_thread()
         self._set_scan_state(ScanState.IDLE)
         self.loading_progress.setRange(0, 100)
         self.loading_progress.setValue(0)
 
         if count > 0:
-            self.status_bar.showMessage(f"扫描完成，找到 {count} 个缓存视频")
+            self.status_bar.showMessage(f"找到 {count} 个视频")
         else:
             self.status_bar.showMessage("未找到缓存视频")
             self._set_empty_hint("no_video")
         self._refresh_video_view()
 
     def _on_scan_error(self, msg: str) -> None:
+        """处理扫描错误。"""
         self.status_bar.showMessage(msg)
 
     def _cleanup_scan_thread(self) -> None:
+        """清理扫描线程。"""
         if self.scan_thread:
             self.scan_thread.quit()
             self.scan_thread.wait()
@@ -1642,6 +1692,7 @@ class MainWindow(QMainWindow):
             self.scan_worker = None
 
     def _add_video_item(self, video: CachedVideo) -> None:
+        """添加视频到列表。"""
         item = QListWidgetItem()
         item.setData(Qt.ItemDataRole.UserRole, video)
 
@@ -1653,6 +1704,7 @@ class MainWindow(QMainWindow):
         self._sync_item_selection_styles()
 
     def _sync_item_selection_styles(self) -> None:
+        """同步列表项选中样式。"""
         for index in range(self.video_list.count()):
             item = self.video_list.item(index)
             widget = self.video_list.itemWidget(item)
@@ -1660,19 +1712,21 @@ class MainWindow(QMainWindow):
                 widget.apply_selection(item.isSelected())
 
     def _clear_cover_cache(self) -> None:
+        """清除封面缓存。"""
         if not COVER_CACHE_DIR.exists():
             return
         for file in COVER_CACHE_DIR.glob("*.jpg"):
             remove_file(file)
 
     def _update_counts(self) -> None:
+        """更新视频计数。"""
         self.count_label.setText(f"{len(self.videos)} 个视频")
 
     def _refresh_video_view(self) -> None:
+        """刷新视频视图。"""
         if self.scan_state == ScanState.LOADING:
             self.video_stack.show_page("loading")
         elif self.scan_state == ScanState.PAUSED:
-            # 暂停时显示视频列表（如果有）
             if self.videos:
                 self.video_stack.show_page("list")
             else:
@@ -1686,28 +1740,27 @@ class MainWindow(QMainWindow):
         self._update_action_states()
 
     def _update_empty_hint(self, mode: str = "") -> None:
+        """更新空状态提示。"""
         if not self.videos and self.scan_state == ScanState.IDLE:
             if not self.selected_device:
                 text = (
-                    "<b>如何连接 Android 设备</b><br><br>"
-                    "1. 启用开发者选项并打开 USB 调试<br>"
-                    "2. 使用数据线连接到本机<br>"
-                    "3. 在设备上打开 USB 文件传输模式<br><br>"
-                    "程序正在自动检测设备连接..."
+                    "<b>如何连接设备</b><br><br>"
+                    "1. 启用USB调试<br>"
+                    "2. 连接设备并开启文件传输<br><br>"
+                    "程序正在自动检测..."
                 )
             else:
-                text = (
-                    "<b>设备已就绪</b><br><br>"
-                    "请手动点击「开始加载」读取哔哩哔哩缓存视频。"
-                )
+                text = "<b>设备已就绪</b><br><br>点击「加载」读取缓存"
             self.empty_hint.setText(text)
         elif not self.videos and mode == "no_video":
-            self.empty_hint.setText("暂无可用缓存，确认已在哔哩哔哩 App 中缓存视频")
+            self.empty_hint.setText("暂无缓存，请先在App中缓存视频")
 
     def _set_empty_hint(self, mode: str) -> None:
+        """设置空状态提示。"""
         self._update_empty_hint(mode)
 
     def _set_scan_state(self, state: ScanState) -> None:
+        """设置扫描状态。"""
         self.scan_state = state
         if state == ScanState.LOADING:
             self.scan_btn.setEnabled(False)
@@ -1725,6 +1778,7 @@ class MainWindow(QMainWindow):
         self._refresh_video_view()
 
     def _get_selected(self) -> list[CachedVideo]:
+        """获取选中的视频列表。"""
         selected: list[CachedVideo] = []
         for index in range(self.video_list.count()):
             item = self.video_list.item(index)
@@ -1735,21 +1789,23 @@ class MainWindow(QMainWindow):
         return selected
 
     def _select_all(self) -> None:
+        """全选视频。"""
         for index in range(self.video_list.count()):
             self.video_list.item(index).setSelected(True)
 
     def _deselect_all(self) -> None:
+        """取消全选。"""
         self.video_list.clearSelection()
 
     def _browse_output(self) -> None:
-        path = QFileDialog.getExistingDirectory(
-            self, "选择输出目录", str(self.output_dir)
-        )
+        """浏览输出目录。"""
+        path = QFileDialog.getExistingDirectory(self, "选择输出目录", str(self.output_dir))
         if path:
             self.output_dir = Path(path)
             self._update_output_label()
 
     def _start_export(self) -> None:
+        """开始导出。"""
         selected = self._get_selected()
         if not selected:
             QMessageBox.warning(self, "提示", "先选择要导出的视频")
@@ -1768,9 +1824,7 @@ class MainWindow(QMainWindow):
         self.export_cancel_btn.setVisible(True)
 
         self.convert_thread = QThread()
-        self.convert_worker = ConvertWorker(
-            selected, self.output_dir, device_id, device_type
-        )
+        self.convert_worker = ConvertWorker(selected, self.output_dir, device_id, device_type)
         self.convert_worker.moveToThread(self.convert_thread)
 
         self.convert_thread.started.connect(self.convert_worker.run)
@@ -1781,29 +1835,34 @@ class MainWindow(QMainWindow):
         self.convert_thread.start()
 
     def _cancel_export(self) -> None:
+        """取消导出。"""
         if self.convert_worker:
             self.convert_worker.cancel()
 
     def _on_convert_progress(self, current: int, total: int, msg: str) -> None:
+        """处理转换进度。"""
         self.export_progress_bar.setValue(current)
         self.export_progress_bar.setFormat(f"{current}/{total}")
         self.status_bar.showMessage(msg)
 
     def _on_convert_finished(self, success: int, total: int) -> None:
+        """处理转换完成。"""
         self._cleanup_convert_thread()
         self._set_export_ui_enabled(True)
         self.export_progress_bar.setVisible(False)
         self.export_cancel_btn.setVisible(False)
 
         QMessageBox.information(
-            self, "完成", f"导出完成\n\n成功: {success} / {total}\n输出目录: {self.output_dir}"
+            self, "完成", f"导出完成\n成功: {success}/{total}\n目录: {self.output_dir}"
         )
         self.status_bar.showMessage(f"导出完成: {success}/{total}")
 
     def _on_convert_error(self, msg: str) -> None:
+        """处理转换错误。"""
         self.status_bar.showMessage(msg)
 
     def _cleanup_convert_thread(self) -> None:
+        """清理转换线程。"""
         if self.convert_thread:
             self.convert_thread.quit()
             self.convert_thread.wait()
@@ -1811,6 +1870,7 @@ class MainWindow(QMainWindow):
             self.convert_worker = None
 
     def _set_export_ui_enabled(self, enabled: bool) -> None:
+        """设置导出UI启用状态。"""
         widgets = [
             self.device_combo,
             self.source_combo,
@@ -1831,10 +1891,9 @@ class MainWindow(QMainWindow):
             self._update_action_states()
 
     def _update_action_states(self) -> None:
+        """更新操作按钮状态。"""
         is_loading = self.scan_state == ScanState.LOADING
         is_paused = self.scan_state == ScanState.PAUSED
-
-        # 暂停时允许大部分操作
         lock_controls = is_loading and not is_paused
 
         self.device_combo.setEnabled(not lock_controls)
@@ -1854,9 +1913,11 @@ class MainWindow(QMainWindow):
         )
 
     def _show_about(self) -> None:
+        """显示关于对话框。"""
         AboutDialog(self, self.icon_path).exec()
 
-    def closeEvent(self, event) -> None:  # type: ignore[override]
+    def closeEvent(self, event) -> None:
+        """处理窗口关闭事件。"""
         running = (self.convert_thread and self.convert_thread.isRunning()) or (
             self.scan_thread and self.scan_thread.isRunning()
         )
@@ -1883,9 +1944,10 @@ class MainWindow(QMainWindow):
 
 
 # ============================================================
-# 入口
+# 程序入口
 # ============================================================
 def main() -> None:
+    """应用程序入口点。"""
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
