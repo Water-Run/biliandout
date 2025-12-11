@@ -8,7 +8,9 @@ import subprocess
 import sys
 import shutil
 import tempfile
+import zipfile
 from pathlib import Path
+from datetime import datetime
 
 
 def convert_png_to_ico(png_path: Path, ico_path: Path) -> bool:
@@ -172,18 +174,42 @@ def build():
     shutil.copy2(exe_file, release_exe)
     print(f"已复制: {release_exe}")
 
+    # 生成 README.txt 内容
+    build_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    readme_content = f"""Android哔哩哔哩视频导出器(biliandout): 双击Android哔哩哔哩视频导出器.exe运行程序
+文档: https://github.com/Water-Run/biliandout
+作者: WaterRun
+时间: {build_time}
+"""
+
+    # 创建临时 README.txt 文件
+    readme_file = release_dir / "README.txt"
+    readme_file.write_text(readme_content, encoding="utf-8")
+    print(f"已创建: {readme_file}")
+
     try:
-        import zipfile
         zip_file = release_dir / "biliandout.zip"
 
-        with zipfile.ZipFile(zip_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-            zf.write(release_exe, release_exe.name)
+        # 删除旧的 zip 文件（如果存在）
+        if zip_file.exists():
+            zip_file.unlink()
+
+        with zipfile.ZipFile(str(zip_file), 'w', zipfile.ZIP_DEFLATED) as zf:
+            # 使用 arcname 指定压缩包内的文件名
+            zf.write(str(release_exe), arcname=f"{app_name}.exe")
+            zf.write(str(readme_file), arcname="README.txt")
 
         zip_size_mb = zip_file.stat().st_size / (1024 * 1024)
         print(f"已创建: {zip_file} ({zip_size_mb:.2f} MB)")
 
+        # 删除临时 README.txt 文件
+        readme_file.unlink()
+        print(f"已清理临时文件: {readme_file}")
+
     except Exception as e:
         print(f"无法创建ZIP压缩包: {e}")
+        import traceback
+        traceback.print_exc()
 
     print("\n" + "=" * 50)
     print("构建完成!")

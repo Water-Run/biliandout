@@ -15,7 +15,7 @@
 1. 从[Release]()下载`biliandout.zip`  
 2. 解压至合适目录, 运行`Android哔哩哔哩视频导出器.exe`. 由于采用单文件封装, 初次打开消耗一些时间是正常的  
 
-> 从源码自行构建: `python build.py`  
+你也可以从源码中自行构建: 在此文档目录下运行`python build.py`即可. 会自动完成打包输出至`_release`目录中.  
 
 ## 如何使用  
 
