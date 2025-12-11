@@ -35,6 +35,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QProgressBar,
+    QScrollArea,
     QSizePolicy,
     QStatusBar,
     QTextBrowser,
@@ -185,6 +186,11 @@ QLabel#videoInfoLabel {{
     color: {COLORS["text_secondary"]};
 }}
 
+QLabel#videoPathLabel {{
+    font-size: 9px;
+    color: {COLORS["text_muted"]};
+}}
+
 QLabel#loadingStatusLabel {{
     font-size: 10px;
     color: {COLORS["text_secondary"]};
@@ -307,6 +313,11 @@ QListWidget::item {{
     margin: 3px 0;
     padding: 0;
     border: none;
+    background-color: transparent;
+}}
+
+QListWidget::item:selected {{
+    background-color: transparent;
 }}
 
 QWidget#videoItem {{
@@ -315,9 +326,10 @@ QWidget#videoItem {{
     border-radius: 6px;
 }}
 
-QWidget#videoItem[selected="true"] {{
-    border-color: {COLORS["primary"]};
+QWidget#videoItemSelected {{
     background-color: #fff6fa;
+    border: 2px solid {COLORS["primary"]};
+    border-radius: 6px;
 }}
 
 QLabel#coverLabel {{
@@ -366,6 +378,11 @@ QTextBrowser {{
     border: 1px solid #ebebeb;
     padding: 16px;
 }}
+
+QScrollArea {{
+    border: none;
+    background-color: transparent;
+}}
 """
 
 
@@ -375,10 +392,11 @@ QTextBrowser {{
 @dataclass(slots=True)
 class CachedVideo:
     """表示一个缓存的视频文件。"""
-    
+
     folder_path: Path
-    video_path: Path
-    audio_path: Path
+    video_path: Path | str
+    audio_path: Path | str
+    combine_path: Path | str
     title: str = "未知标题"
     part_title: str = ""
     size_mb: float = 0.0
@@ -425,72 +443,108 @@ class ScanState(Enum):
 # ============================================================
 # 视频列表项组件
 # ============================================================
-class VideoListItemWidget(QWidget):
+class VideoListItemWidget(QFrame):
     """视频列表项的自定义Widget。"""
-    
-    COVER_SIZE = QSize(90, 68)
+
+    COVER_SIZE = QSize(80, 60)
 
     def __init__(self, video: CachedVideo, parent: QWidget | None = None) -> None:
-        """初始化视频列表项。"""
         super().__init__(parent)
         self.video = video
-        self.setObjectName("videoItem")
-        self.setProperty("selected", False)
+        self._is_selected = False
         self._cover_pixmap: QPixmap | None = None
+
         self._setup_ui()
+        self._apply_default_style()
         self.update_content(video)
+
+    def _apply_default_style(self) -> None:
+        """应用默认样式。"""
+        self.setStyleSheet("""
+            VideoListItemWidget {
+                background-color: #ffffff;
+                border: 1px solid #e0e0e0;
+                border-radius: 6px;
+            }
+        """)
 
     def _setup_ui(self) -> None:
         """设置UI组件。"""
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
-        layout.setSpacing(8)
+        layout.setSpacing(10)
 
+        # 封面
         self.cover_label = QLabel()
-        self.cover_label.setObjectName("coverLabel")
         self.cover_label.setFixedSize(self.COVER_SIZE)
         self.cover_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.cover_label.setVisible(False)
+        self.cover_label.setStyleSheet(
+            f"border: 1px solid {COLORS['border']}; border-radius: 4px; background-color: #fdfdfd;"
+        )
         layout.addWidget(self.cover_label, 0, Qt.AlignmentFlag.AlignTop)
 
-        text_layout = QVBoxLayout()
+        # 文本区域
+        text_container = QWidget()
+        text_layout = QVBoxLayout(text_container)
         text_layout.setContentsMargins(0, 0, 0, 0)
-        text_layout.setSpacing(2)
+        text_layout.setSpacing(3)
 
         self.title_label = QLabel()
-        self.title_label.setObjectName("videoTitleLabel")
+        self.title_label.setStyleSheet("border: none; font-weight: bold; font-size: 11px;")
         self.title_label.setWordWrap(True)
-        self.title_label.setMinimumWidth(150)
+        text_layout.addWidget(self.title_label)
 
         self.info_label = QLabel()
-        self.info_label.setObjectName("videoInfoLabel")
+        self.info_label.setStyleSheet(f"border: none; font-size: 10px; color: {COLORS['text_secondary']};")
         self.info_label.setWordWrap(True)
+        text_layout.addWidget(self.info_label)
 
         self.path_label = QLabel()
-        self.path_label.setObjectName("mutedLabel")
+        self.path_label.setStyleSheet(f"border: none; font-size: 9px; color: {COLORS['text_muted']};")
         self.path_label.setWordWrap(True)
-        self.path_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-        )
-
-        text_layout.addWidget(self.title_label)
-        text_layout.addWidget(self.info_label)
         text_layout.addWidget(self.path_label)
-        text_layout.addStretch()
 
-        layout.addLayout(text_layout, 1)
+        text_layout.addStretch()
+        layout.addWidget(text_container, 1)
 
     def update_content(self, video: CachedVideo) -> None:
         """更新显示内容。"""
+        self.video = video
         self.title_label.setText(video.display_title)
+
         info_parts = [video.size_display]
         if video.tech_info:
             info_parts.append(video.tech_info)
         if video.bvid:
             info_parts.append(video.bvid)
         self.info_label.setText(" | ".join(info_parts))
-        self.path_label.setText(str(video.folder_path))
+
+        # 简化路径显示：只保留 download 之后的部分
+        full_path = str(video.folder_path)
+        display_path = self._simplify_path(full_path)
+        self.path_label.setText(display_path)
+        self.path_label.setToolTip(full_path)  # 悬浮显示完整路径
+
         self._update_cover(video.cover_path)
+
+    def _simplify_path(self, full_path: str) -> str:
+        """简化路径，只保留 download 之后的部分。"""
+        # 查找 download 目录位置（不区分大小写）
+        lower_path = full_path.lower()
+        markers = ["\\download\\", "/download/"]
+
+        for marker in markers:
+            idx = lower_path.find(marker)
+            if idx != -1:
+                # 保留 download 之后的部分
+                return "...\\" + full_path[idx + len(marker):]
+
+        # 如果找不到 download，尝试只保留最后3级目录
+        parts = full_path.replace("/", "\\").split("\\")
+        if len(parts) > 3:
+            return "...\\" + "\\".join(parts[-3:])
+
+        return full_path
 
     def _update_cover(self, cover_path: Path | None) -> None:
         """更新封面图片。"""
@@ -498,12 +552,16 @@ class VideoListItemWidget(QWidget):
             pixmap = QPixmap(str(cover_path))
             if not pixmap.isNull():
                 self._cover_pixmap = pixmap
-                self.cover_label.setVisible(True)
                 self._render_cover_pixmap()
                 return
+
+        # 无封面时显示占位
         self._cover_pixmap = None
-        self.cover_label.clear()
-        self.cover_label.setVisible(False)
+        self.cover_label.setText("无封面")
+        self.cover_label.setStyleSheet(
+            f"background-color: #f0f0f0; color: {COLORS['text_muted']}; "
+            f"font-size: 9px; border: 1px solid {COLORS['border']}; border-radius: 4px;"
+        )
 
     def _render_cover_pixmap(self) -> None:
         """渲染封面图片（支持高DPI）。"""
@@ -516,23 +574,47 @@ class VideoListItemWidget(QWidget):
 
         device_ratio = max(self.devicePixelRatioF(), 1.0)
         scaled = self._cover_pixmap.scaled(
-            target_size * device_ratio,
+            int(target_size.width() * device_ratio),
+            int(target_size.height() * device_ratio),
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
         scaled.setDevicePixelRatio(device_ratio)
         self.cover_label.setPixmap(scaled)
+        self.cover_label.setStyleSheet(
+            f"border: 1px solid {COLORS['border']}; border-radius: 4px; background-color: #fdfdfd;"
+        )
 
     def resizeEvent(self, event) -> None:
         """处理大小变化事件。"""
         super().resizeEvent(event)
-        self._render_cover_pixmap()
+        if self._cover_pixmap:
+            self._render_cover_pixmap()
 
     def apply_selection(self, selected: bool) -> None:
         """应用选中状态样式。"""
-        self.setProperty("selected", selected)
-        self.style().unpolish(self)
-        self.style().polish(self)
+        self._is_selected = selected
+        if selected:
+            # FFmpeg 绿色: #5cb85c 或 #007808
+            self.setStyleSheet("""
+                VideoListItemWidget {
+                    background-color: #f0fff0;
+                    border: 2px solid #5cb85c;
+                    border-radius: 6px;
+                }
+            """)
+        else:
+            self.setStyleSheet("""
+                VideoListItemWidget {
+                    background-color: #ffffff;
+                    border: 1px solid #e0e0e0;
+                    border-radius: 6px;
+                }
+            """)
+
+    def sizeHint(self) -> QSize:
+        """返回建议大小。"""
+        return QSize(300, 90)
 
 
 # ============================================================
@@ -540,7 +622,7 @@ class VideoListItemWidget(QWidget):
 # ============================================================
 class ScanWorker(QObject):
     """扫描缓存视频的工作线程。"""
-    
+
     progress = pyqtSignal(int, int)
     found = pyqtSignal(object)
     finished = pyqtSignal(int)
@@ -668,7 +750,7 @@ class ScanWorker(QObject):
         return videos
 
     def _parse_video_adb(
-        self, adb: str, remote_path: str, files: list[str], root_folder: str
+            self, adb: str, remote_path: str, files: list[str], root_folder: str
     ) -> CachedVideo | None:
         """解析ADB设备上的视频信息。"""
         title = root_folder
@@ -679,6 +761,7 @@ class ScanWorker(QObject):
         frame_rate = ""
         cover_path = None
 
+        # 1. 解析 index.json（与 m4s 同目录）
         if "index.json" in files:
             local_index = self._pull_temp_file(adb, f"{remote_path}/index.json")
             if local_index:
@@ -686,31 +769,35 @@ class ScanWorker(QObject):
                 resolution, frame_rate = self._parse_index_json(data)
                 remove_file(local_index)
 
-        current_path = remote_path
-        for _ in range(5):
-            entry_remote = f"{current_path}/entry.json"
-            local_entry = self._pull_temp_file(adb, entry_remote)
-            if local_entry:
-                data = safe_json_load(local_entry)
-                title = data.get("title", title)
-                bvid = data.get("bvid", "")
-                page_data = data.get("page_data", {})
-                part_title = page_data.get("part", "")
-                quality = self._get_quality_name(data.get("quality", 0))
-                remove_file(local_entry)
-                cover_path = self._pull_cover_adb(adb, current_path, bvid or root_folder)
+        # 2. 从目录名获取画质（用字符串操作）
+        try:
+            path_name = remote_path.rsplit("/", 1)[-1]
+            quality_id = int(path_name)
+            quality = self._get_quality_name(quality_id)
+        except ValueError:
+            pass
+
+        # 3. 向上查找 cover.jpg（从父目录开始）
+        parent_path = remote_path.rsplit("/", 1)[0] if "/" in remote_path else remote_path
+        for _ in range(3):
+            cover_path = self._pull_cover_adb(adb, parent_path, root_folder)
+            if cover_path:
                 break
-            parts = current_path.rsplit("/", 1)
-            if len(parts) < 2:
+            if "/" not in parent_path:
                 break
-            current_path = parts[0]
+            parent_path = parent_path.rsplit("/", 1)[0]
 
         size_mb = self._calc_remote_size(adb, remote_path)
 
+        # combine_path 是 remote_path 的父目录（c_xxxxx 目录）
+        combine_path_str = remote_path.rsplit("/", 1)[0] if "/" in remote_path else remote_path
+
+        # ADB 路径保持为字符串，不转换为 Path
         return CachedVideo(
-            folder_path=Path(remote_path),
-            video_path=Path(f"{remote_path}/video.m4s"),
-            audio_path=Path(f"{remote_path}/audio.m4s"),
+            folder_path=Path(remote_path.replace("/", os.sep)),  # 仅用于UI显示
+            video_path=f"{remote_path}/video.m4s",  # 字符串，用于 adb pull
+            audio_path=f"{remote_path}/audio.m4s",  # 字符串，用于 adb pull
+            combine_path=combine_path_str,  # 字符串，用于 adb pull
             title=title,
             part_title=part_title,
             size_mb=size_mb,
@@ -765,18 +852,25 @@ class ScanWorker(QObject):
         """从ADB设备拉取封面图片。"""
         if not self.cover_cache_dir:
             return None
+
         cover_remote = f"{remote_path}/cover.jpg"
         safe_id = hashlib.md5(f"{remote_path}_{identifier}".encode("utf-8")).hexdigest()
         cover_local = self.cover_cache_dir / f"{safe_id}.jpg"
+
+        # 如果已缓存，直接返回
+        if cover_local.exists():
+            return cover_local
+
         try:
             result = run_command(
                 [adb, "-s", self.device_id, "pull", cover_remote, str(cover_local)],
                 timeout=15,
             )
-            if result.returncode == 0 and cover_local.exists():
+            if result.returncode == 0 and cover_local.exists() and cover_local.stat().st_size > 0:
                 return cover_local
         except subprocess.SubprocessError as exc:
             logger.debug("拉取封面失败: %s", exc)
+
         remove_file(cover_local)
         return None
 
@@ -834,29 +928,30 @@ class ScanWorker(QObject):
         frame_rate = ""
         cover_path: Path | None = None
 
+        # 1. 解析 index.json（与 m4s 同目录）
         index_json = folder / "index.json"
         if index_json.exists():
             data = safe_json_load(index_json)
             resolution, frame_rate = self._parse_index_json(data)
 
-        current = folder
-        for _ in range(5):
-            entry = current / "entry.json"
-            if entry.exists():
-                data = safe_json_load(entry)
-                title = data.get("title", title)
-                bvid = data.get("bvid", "")
-                page_data = data.get("page_data", {})
-                part_title = page_data.get("part", "")
-                quality = self._get_quality_name(data.get("quality", 0))
-                cover_file = current / "cover.jpg"
-                if cover_file.exists():
-                    cover_path = cover_file
+        # 2. 独立向上查找 cover.jpg（不依赖 entry.json）
+        current = folder.parent  # 从上一级开始找（即 c_xxxxx 目录）
+        for _ in range(3):
+            cover_file = current / "cover.jpg"
+            if cover_file.exists():
+                cover_path = cover_file
                 break
             parent = current.parent
             if parent == current:
                 break
             current = parent
+
+        # 3. 尝试从目录名推断信息
+        try:
+            quality_id = int(folder.name)
+            quality = self._get_quality_name(quality_id)
+        except ValueError:
+            pass
 
         video_m4s = folder / "video.m4s"
         audio_m4s = folder / "audio.m4s"
@@ -864,10 +959,14 @@ class ScanWorker(QObject):
             video_m4s.stat().st_size + audio_m4s.stat().st_size
         )
 
+        # combine_path 是 folder 的父目录（c_xxxxx 目录）
+        combine_path = folder.parent
+
         return CachedVideo(
             folder_path=folder,
             video_path=video_m4s,
             audio_path=audio_m4s,
+            combine_path=combine_path,
             title=title,
             part_title=part_title,
             size_mb=size_mb,
@@ -931,7 +1030,7 @@ class ScanWorker(QObject):
 # ============================================================
 class DeviceScanner:
     """设备扫描和操作工具类。"""
-    
+
     _adb_path: str | None = None
 
     @classmethod
@@ -1021,36 +1120,42 @@ class DeviceScanner:
 
     @classmethod
     def pull_and_convert(
-        cls, video: CachedVideo, output_path: Path, device_id: str, device_type: str
+            cls, video: CachedVideo, output_path: Path, device_id: str, device_type: str
     ) -> bool:
         """拉取视频文件并转换为MP4。"""
         if device_type == "drive":
-            return biliffm4s.combine(str(video.folder_path), str(output_path))
+            return biliffm4s.combine(str(video.combine_path), output=str(output_path))
+
         if device_type == "adb":
             adb = cls.find_adb()
             if not adb:
                 return False
 
             temp_dir = Path(tempfile.mkdtemp())
+
+            # 确保远程路径是字符串（不是 Path 对象）
+            remote_video = str(video.video_path) if isinstance(video.video_path, Path) else video.video_path
+            remote_audio = str(video.audio_path) if isinstance(video.audio_path, Path) else video.audio_path
+
             try:
                 local_video = temp_dir / "video.m4s"
                 local_audio = temp_dir / "audio.m4s"
 
                 result = run_command(
-                    [adb, "-s", device_id, "pull", str(video.video_path), str(local_video)],
+                    [adb, "-s", device_id, "pull", remote_video, str(local_video)],
                     timeout=300,
                 )
                 if result.returncode != 0:
                     return False
 
                 result = run_command(
-                    [adb, "-s", device_id, "pull", str(video.audio_path), str(local_audio)],
+                    [adb, "-s", device_id, "pull", remote_audio, str(local_audio)],
                     timeout=300,
                 )
                 if result.returncode != 0:
                     return False
 
-                return biliffm4s.combine(str(temp_dir), str(output_path))
+                return biliffm4s.combine(str(temp_dir), output=str(output_path))
             finally:
                 shutil.rmtree(temp_dir, ignore_errors=True)
         return False
@@ -1061,7 +1166,7 @@ class DeviceScanner:
 # ============================================================
 class ConvertWorker(QObject):
     """视频转换工作线程。"""
-    
+
     progress = pyqtSignal(int, int, str)
     finished = pyqtSignal(int, int)
     error = pyqtSignal(str)
@@ -1099,15 +1204,15 @@ class ConvertWorker(QObject):
                 if len(video.display_title) > 25
                 else video.display_title
             )
-            self.progress.emit(index + 1, total, f"转换: {title_short}")
+            self.progress.emit(index + 1, total, f"正在转换: {title_short}")
 
             safe_title = self._sanitize_filename(video.display_title)
             output_path = self.output_dir / f"{safe_title}.mp4"
 
-            counter = 1
-            while output_path.exists():
-                output_path = self.output_dir / f"{safe_title}_{counter}.mp4"
-                counter += 1
+            # 跳过已存在的文件（用户选择不删除）
+            if output_path.exists():
+                self.error.emit(f"跳过（已存在）: {title_short}")
+                continue
 
             try:
                 result = DeviceScanner.pull_and_convert(
@@ -1138,7 +1243,7 @@ class ConvertWorker(QObject):
 # ============================================================
 class AboutDialog(QDialog):
     """关于对话框。"""
-    
+
     def __init__(self, parent: QWidget | None = None, icon_path: Path | None = None) -> None:
         """初始化关于对话框。"""
         super().__init__(parent)
@@ -1226,7 +1331,7 @@ class AboutDialog(QDialog):
 # ============================================================
 class WidgetStack:
     """简单的Widget栈管理器。"""
-    
+
     def __init__(self) -> None:
         """初始化栈管理器。"""
         self.container = QWidget()
@@ -1260,7 +1365,7 @@ class WidgetStack:
 # ============================================================
 class MainWindow(QMainWindow):
     """应用程序主窗口。"""
-    
+
     def __init__(self) -> None:
         """初始化主窗口。"""
         super().__init__()
@@ -1303,7 +1408,7 @@ class MainWindow(QMainWindow):
         """设置用户界面。"""
         self.setWindowTitle("Android哔哩哔哩视频导出器")
         self.setMinimumSize(420, 480)
-        self.resize(460, 520)
+        self.resize(480, 560)
 
         if self.icon_path.exists():
             pixmap = QPixmap(str(self.icon_path))
@@ -1425,6 +1530,8 @@ class MainWindow(QMainWindow):
         self.video_list = QListWidget()
         self.video_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
         self.video_list.setSpacing(4)
+        self.video_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.video_list.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
         self.video_stack.add_page("list", self.video_list)
 
         main_layout.addWidget(video_group, 1)
@@ -1521,6 +1628,24 @@ class MainWindow(QMainWindow):
         """处理窗口大小变化。"""
         super().resizeEvent(event)
         self._update_output_label()
+        self._update_list_item_sizes()
+
+    def _update_list_item_sizes(self) -> None:
+        """更新列表项大小以适应窗口宽度。"""
+        if not self.video_list.isVisible():
+            return
+
+        list_width = self.video_list.viewport().width()
+        if list_width <= 0:
+            return
+
+        for index in range(self.video_list.count()):
+            item = self.video_list.item(index)
+            widget = self.video_list.itemWidget(item)
+            if widget:
+                widget.setFixedWidth(list_width)  # 去掉 -10
+                hint = widget.sizeHint()
+                item.setSizeHint(QSize(list_width, max(hint.height(), 90)))
 
     def _connect_signals(self) -> None:
         """连接信号与槽。"""
@@ -1535,7 +1660,12 @@ class MainWindow(QMainWindow):
         self.device_combo.currentIndexChanged.connect(self._on_device_changed)
         self.scan_pause_btn.clicked.connect(self._toggle_scan_pause)
         self.scan_cancel_btn.clicked.connect(self._cancel_scan)
-        self.video_list.itemSelectionChanged.connect(self._sync_item_selection_styles)
+        self.video_list.itemSelectionChanged.connect(self._on_selection_changed)
+
+    def _on_selection_changed(self) -> None:
+        """处理选择变化。"""
+        self._sync_item_selection_styles()
+        self._update_action_states()
 
     def _start_auto_refresh_if_needed(self) -> None:
         """未连接设备时启动自动刷新。"""
@@ -1640,7 +1770,7 @@ class MainWindow(QMainWindow):
             self.scan_worker.pause()
             self.scan_pause_btn.setText("继续")
             self._set_scan_state(ScanState.PAUSED)
-            self.status_bar.showMessage("已暂停")
+            self.status_bar.showMessage("已暂停 - 选择视频后可导出")
 
     def _cancel_scan(self) -> None:
         """取消扫描。"""
@@ -1673,7 +1803,7 @@ class MainWindow(QMainWindow):
         self.loading_progress.setValue(0)
 
         if count > 0:
-            self.status_bar.showMessage(f"找到 {count} 个视频")
+            self.status_bar.showMessage(f"找到 {count} 个视频，选择后点击「导出选中」")
         else:
             self.status_bar.showMessage("未找到缓存视频")
             self._set_empty_hint("no_video")
@@ -1697,11 +1827,15 @@ class MainWindow(QMainWindow):
         item.setData(Qt.ItemDataRole.UserRole, video)
 
         widget = VideoListItemWidget(video)
-        item.setSizeHint(widget.sizeHint())
+
+        list_width = self.video_list.viewport().width()
+        if list_width > 0:
+            widget.setFixedWidth(list_width)  # 去掉 -10
+
+        item.setSizeHint(QSize(list_width if list_width > 0 else 300, 90))
 
         self.video_list.addItem(item)
         self.video_list.setItemWidget(item, widget)
-        self._sync_item_selection_styles()
 
     def _sync_item_selection_styles(self) -> None:
         """同步列表项选中样式。"""
@@ -1720,7 +1854,12 @@ class MainWindow(QMainWindow):
 
     def _update_counts(self) -> None:
         """更新视频计数。"""
-        self.count_label.setText(f"{len(self.videos)} 个视频")
+        selected_count = len(self._get_selected())
+        total_count = len(self.videos)
+        if selected_count > 0:
+            self.count_label.setText(f"已选 {selected_count}/{total_count} 个视频")
+        else:
+            self.count_label.setText(f"{total_count} 个视频")
 
     def _refresh_video_view(self) -> None:
         """刷新视频视图。"""
@@ -1738,6 +1877,9 @@ class MainWindow(QMainWindow):
                 self._update_empty_hint()
                 self.video_stack.show_page("empty")
         self._update_action_states()
+
+        # 延迟更新列表项大小
+        QTimer.singleShot(50, self._update_list_item_sizes)
 
     def _update_empty_hint(self, mode: str = "") -> None:
         """更新空状态提示。"""
@@ -1808,14 +1950,51 @@ class MainWindow(QMainWindow):
         """开始导出。"""
         selected = self._get_selected()
         if not selected:
-            QMessageBox.warning(self, "提示", "先选择要导出的视频")
+            QMessageBox.warning(self, "提示", "请先选择要导出的视频")
             return
 
-        self.output_dir.mkdir(parents=True, exist_ok=True)
         selected_device = self.selected_device
         if not selected_device:
+            QMessageBox.warning(self, "提示", "未连接设备")
             return
+
         device_id, device_type = selected_device
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # 检查同名文件
+        existing_files: list[Path] = []
+        for video in selected:
+            safe_title = ConvertWorker._sanitize_filename(video.display_title)
+            output_path = self.output_dir / f"{safe_title}.mp4"
+            if output_path.exists():
+                existing_files.append(output_path)
+
+        if existing_files:
+            file_list = "\n".join(f.name for f in existing_files[:5])
+            if len(existing_files) > 5:
+                file_list += f"\n... 等共 {len(existing_files)} 个文件"
+
+            reply = QMessageBox.question(
+                self,
+                "文件已存在",
+                f"以下文件已存在：\n{file_list}\n\n是否删除并重新导出？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                for f in existing_files:
+                    remove_file(f)
+            else:
+                return
+
+        # 确认导出
+        reply = QMessageBox.question(
+            self,
+            "确认导出",
+            f"即将导出 {len(selected)} 个视频到:\n{self.output_dir}\n\n是否继续？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
 
         self._set_export_ui_enabled(False)
         self.export_progress_bar.setVisible(True)
@@ -1853,7 +2032,7 @@ class MainWindow(QMainWindow):
         self.export_cancel_btn.setVisible(False)
 
         QMessageBox.information(
-            self, "完成", f"导出完成\n成功: {success}/{total}\n目录: {self.output_dir}"
+            self, "导出完成", f"成功导出: {success}/{total}\n\n输出目录:\n{self.output_dir}"
         )
         self.status_bar.showMessage(f"导出完成: {success}/{total}")
 
@@ -1894,6 +2073,7 @@ class MainWindow(QMainWindow):
         """更新操作按钮状态。"""
         is_loading = self.scan_state == ScanState.LOADING
         is_paused = self.scan_state == ScanState.PAUSED
+        is_idle = self.scan_state == ScanState.IDLE
         lock_controls = is_loading and not is_paused
 
         self.device_combo.setEnabled(not lock_controls)
@@ -1903,14 +2083,20 @@ class MainWindow(QMainWindow):
         self.about_btn.setEnabled(True)
 
         has_videos = bool(self.videos)
-        self.select_all_btn.setEnabled(has_videos)
-        self.deselect_btn.setEnabled(has_videos)
-        self.video_list.setEnabled(has_videos)
-        self.export_btn.setEnabled(has_videos and not is_loading)
+        has_selection = len(self._get_selected()) > 0
+        
+        self.select_all_btn.setEnabled(has_videos and (is_idle or is_paused))
+        self.deselect_btn.setEnabled(has_videos and (is_idle or is_paused))
+        self.video_list.setEnabled(has_videos and (is_idle or is_paused))
+        
+        # 导出按钮：扫描完成或暂停时，有选中项即可导出
+        can_export = has_selection and (is_idle or is_paused)
+        self.export_btn.setEnabled(can_export)
 
-        self.scan_btn.setEnabled(
-            self.scan_state == ScanState.IDLE and self.selected_device is not None
-        )
+        self.scan_btn.setEnabled(is_idle and self.selected_device is not None)
+        
+        # 更新计数显示
+        self._update_counts()
 
     def _show_about(self) -> None:
         """显示关于对话框。"""
