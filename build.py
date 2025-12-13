@@ -1,21 +1,47 @@
 """
-biliandout 构建脚本
-使用 PyInstaller 将应用打包为单文件可执行程序
-运行: python build.py
+biliandout 构建脚本（工程化版本）
+
+特性：
+- 使用 PyInstaller onefile
+- 正确打包 biliffm4s 及其内置 ffmpeg / dll
+- 自动生成 ico
+- 自动发布 release + zip
+
+运行：
+    python build.py
 """
+
+from __future__ import annotations
 
 import subprocess
 import sys
 import shutil
 import tempfile
+import zipfile
 from pathlib import Path
 from datetime import datetime
 
 
+# ============================================================
+# 基础配置
+# ============================================================
+
+APP_NAME = "Android哔哩哔哩视频导出器"
+ENTRY_SCRIPT = "biliandout/biliandout.py"
+ICON_PNG = "biliandout/logo.png"
+
+PROJECT_ROOT = Path(__file__).parent.resolve()
+DIST_DIR = PROJECT_ROOT / "dist"
+BUILD_DIR = PROJECT_ROOT / "build"
+RELEASE_DIR = PROJECT_ROOT / "_release"
+
+
+# ============================================================
+# 工具：PNG -> ICO
+# ============================================================
+
 def convert_png_to_ico(png_path: Path, ico_path: Path) -> bool:
-    """
-    将 PNG 转换为高质量 ICO（多尺寸）
-    """
+    """将 PNG 转换为多尺寸 ICO"""
     try:
         from PIL import Image
 
@@ -27,185 +53,140 @@ def convert_png_to_ico(png_path: Path, ico_path: Path) -> bool:
         img = img.crop((left, top, left + size, top + size))
 
         sizes = [256, 128, 64, 48, 32, 24, 16]
-
-        icons = [img.resize((s, s), Image.Resampling.LANCZOS) for s in sizes]
-
         img.save(ico_path, format="ICO", sizes=[(s, s) for s in sizes])
 
-        print(f"图标转换成功: {ico_path}")
+        print(f"[OK] 图标生成: {ico_path}")
         return True
 
     except Exception as e:
-        print(f"图标转换失败: {e}")
+        print(f"[WARN] 图标生成失败: {e}")
         return False
 
 
-def build():
-    """执行构建"""
-    project_root = Path(__file__).parent
-    source_dir = project_root / "biliandout"
-    main_script = source_dir / "biliandout.py"
-    icon_png = source_dir / "logo.png"
+# ============================================================
+# 构建主逻辑
+# ============================================================
 
-    dist_dir = project_root / "dist"
-    build_dir = project_root / "build"
-    release_dir = project_root / "_release"
+def build() -> None:
+    entry = PROJECT_ROOT / ENTRY_SCRIPT
+    icon_png = PROJECT_ROOT / ICON_PNG
 
-    app_name = "Android哔哩哔哩视频导出器"
+    if not entry.exists():
+        raise SystemExit(f"[ERROR] 找不到入口脚本: {entry}")
 
-    if not main_script.exists():
-        print(f"错误: 找不到主脚本 {main_script}")
-        sys.exit(1)
+    print("=" * 60)
+    print(" biliandout PyInstaller 构建开始")
+    print("=" * 60)
 
-    if not icon_png.exists():
-        print(f"错误: 找不到图标文件 {icon_png}")
-        sys.exit(1)
+    # ---------- 清理 ----------
+    for d in (DIST_DIR, BUILD_DIR):
+        if d.exists():
+            shutil.rmtree(d)
+            print(f"[CLEAN] 删除 {d}")
 
-    print("=" * 50)
-    print("清理旧的构建文件...")
-    print("=" * 50)
+    RELEASE_DIR.mkdir(exist_ok=True)
 
-    for dir_path in [dist_dir, build_dir]:
-        if dir_path.exists():
-            shutil.rmtree(dir_path)
-            print(f"已删除: {dir_path}")
+    # ---------- 图标 ----------
+    temp_dir = Path(tempfile.mkdtemp(prefix="biliandout-build-"))
+    icon_ico = temp_dir / "app.ico"
 
-    print("\n" + "=" * 50)
-    print("转换图标文件...")
-    print("=" * 50)
+    if not (icon_png.exists() and convert_png_to_ico(icon_png, icon_ico)):
+        icon_ico = None
+        print("[WARN] 将不设置 EXE 图标")
 
-    temp_dir = Path(tempfile.mkdtemp())
-    temp_ico_path = temp_dir / "logo.ico"
-    icon_ico = None
+    # ---------- PyInstaller 参数 ----------
+    pyinstaller_cmd = [
+        sys.executable,
+        "-m",
+        "PyInstaller",
 
-    if convert_png_to_ico(icon_png, temp_ico_path):
-        icon_ico = temp_ico_path
-    else:
-        print("将继续构建，但不设置EXE图标")
-
-    print("\n" + "=" * 50)
-    print("开始PyInstaller构建...")
-    print("=" * 50)
-
-    pyinstaller_args = [
-        sys.executable, "-m", "PyInstaller",
         "--onefile",
         "--windowed",
-        "--name", app_name,
         "--clean",
         "--noconfirm",
-        f"--distpath={dist_dir}",
-        f"--workpath={build_dir}",
-        f"--specpath={project_root}",
-    ]
 
-    if icon_png.exists():
-        pyinstaller_args.extend([
-            "--add-data", f"{icon_png};."
-        ])
+        f"--name={APP_NAME}",
+        f"--distpath={DIST_DIR}",
+        f"--workpath={BUILD_DIR}",
+        f"--specpath={PROJECT_ROOT}",
 
-    if icon_ico and icon_ico.exists():
-        pyinstaller_args.extend([
-            "--icon", str(icon_ico)
-        ])
-
-    hidden_imports = [
+        # 关键：完整收集 biliffm4s（包含 ffmpeg / dll）
+        "--collect-all",
         "biliffm4s",
-        "PyQt6",
-        "PyQt6.QtWidgets",
-        "PyQt6.QtCore",
-        "PyQt6.QtGui",
     ]
 
-    for module in hidden_imports:
-        pyinstaller_args.extend(["--hidden-import", module])
+    if icon_ico:
+        pyinstaller_cmd += ["--icon", str(icon_ico)]
 
-    pyinstaller_args.append(str(main_script))
+    pyinstaller_cmd.append(str(entry))
 
-    print("\n构建命令:")
-    for i, arg in enumerate(pyinstaller_args):
-        if i == 0:
-            print(f"  {arg} \\")
-        elif i == len(pyinstaller_args) - 1:
-            print(f"    {arg}")
-        else:
-            print(f"    {arg} \\")
+    # ---------- 打印命令 ----------
+    print("\n[CMD] PyInstaller 构建命令：\n")
+    for i, arg in enumerate(pyinstaller_cmd):
+        end = " \\" if i != len(pyinstaller_cmd) - 1 else ""
+        print(f"  {arg}{end}")
     print()
 
+    # ---------- 执行 ----------
     try:
-        result = subprocess.run(
-            pyinstaller_args,
+        subprocess.run(
+            pyinstaller_cmd,
+            cwd=PROJECT_ROOT,
             check=True,
-            cwd=project_root
         )
-        print("\n构建成功!")
-
-    except subprocess.CalledProcessError as e:
-        print(f"\n构建失败: {e}")
-        sys.exit(1)
     except FileNotFoundError:
-        print("\n错误: 未找到 PyInstaller")
-        print("安装方法: pip install pyinstaller")
-        sys.exit(1)
+        raise SystemExit("[ERROR] 未安装 PyInstaller（pip install pyinstaller）")
+    except subprocess.CalledProcessError as e:
+        raise SystemExit(f"[ERROR] PyInstaller 构建失败: {e}")
     finally:
-        if temp_dir.exists():
-            try:
-                shutil.rmtree(temp_dir)
-            except:
-                pass
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
-    exe_file = dist_dir / f"{app_name}.exe"
-    if not exe_file.exists():
-        print(f"\n错误: 未找到输出文件 {exe_file}")
-        sys.exit(1)
+    # ---------- 校验输出 ----------
+    exe_path = DIST_DIR / f"{APP_NAME}.exe"
+    if not exe_path.exists():
+        raise SystemExit(f"[ERROR] 未生成 exe: {exe_path}")
 
-    exe_size_mb = exe_file.stat().st_size / (1024 * 1024)
-    print(f"\n输出文件: {exe_file}")
-    print(f"文件大小: {exe_size_mb:.2f} MB")
+    size_mb = exe_path.stat().st_size / 1024 / 1024
+    print(f"[OK] 构建成功: {exe_path} ({size_mb:.2f} MB)")
 
-    print("\n" + "=" * 50)
-    print("创建发布包...")
-    print("=" * 50)
+    # ---------- 发布 ----------
+    release_exe = RELEASE_DIR / exe_path.name
+    shutil.copy2(exe_path, release_exe)
+    print(f"[OK] 发布 EXE: {release_exe}")
 
-    release_dir.mkdir(exist_ok=True)
-
-    release_exe = release_dir / f"{app_name}.exe"
-    shutil.copy2(exe_file, release_exe)
-    print(f"已复制: {release_exe}")
-
-    # 生成 README.txt 内容
+    # README
     build_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    readme_content = f"""Android哔哩哔哩视频导出器(biliandout): 双击Android哔哩哔哩视频导出器.exe运行程序
-文档: https://github.com/Water-Run/biliandout
+    readme_text = f"""Android哔哩哔哩视频导出器 (biliandout)
+
 作者: WaterRun
-时间: {build_time}
+项目: https://github.com/Water-Run/biliandout
+构建时间: {build_time}
+
+说明:
+- 本程序为 Windows 64 位单文件可执行程序
+- 已内置 ffmpeg，无需额外安装
+- 双击 exe 即可运行
 """
 
-    try:
-        import zipfile
-        zip_file = release_dir / "biliandout.zip"
+    zip_path = RELEASE_DIR / "biliandout.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(release_exe, release_exe.name)
+        zf.writestr("README.txt", readme_text)
 
-        with zipfile.ZipFile(zip_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-            zf.write(release_exe, release_exe.name)
-            # 将 README.txt 写入压缩包
-            zf.writestr("README.txt", readme_content)
+    zip_size = zip_path.stat().st_size / 1024 / 1024
+    print(f"[OK] 发布 ZIP: {zip_path} ({zip_size:.2f} MB)")
 
-        zip_size_mb = zip_file.stat().st_size / (1024 * 1024)
-        print(f"已创建: {zip_file} ({zip_size_mb:.2f} MB)")
-        print(f"已添加 README.txt 到压缩包")
+    print("\n" + "=" * 60)
+    print(" 构建完成")
+    print("=" * 60)
+    print(f"发布目录: {RELEASE_DIR}")
+    for f in RELEASE_DIR.iterdir():
+        print(f"  - {f.name}")
 
-    except Exception as e:
-        print(f"无法创建ZIP压缩包: {e}")
 
-    print("\n" + "=" * 50)
-    print("构建完成!")
-    print("=" * 50)
-    print(f"\n发布文件位于: {release_dir}")
-    print("\n文件列表:")
-    for f in release_dir.iterdir():
-        size_mb = f.stat().st_size / (1024 * 1024)
-        print(f"  {f.name} ({size_mb:.2f} MB)")
-
+# ============================================================
+# 入口
+# ============================================================
 
 if __name__ == "__main__":
     build()
