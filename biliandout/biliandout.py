@@ -2,6 +2,7 @@
 Android哔哩哔哩视频导出器 (biliandout)
 PyQt Windows桌面端图形应用，读取Android设备哔哩哔哩缓存视频并导出为.mp4
 GitHub: https://github.com/Water-Run/biliandout
+哔哩哔哩: https://www.bilibili.com/video/BV11pBdBbEKF
 """
 
 import contextlib
@@ -64,7 +65,7 @@ BILI_SOURCES: dict[str, dict[str, str]] = {
     "international": {"package": "com.bilibili.app.in", "name": "哔哩哔哩国际版"},
 }
 
-VERSION = "1.0"
+VERSION = "1.1"
 
 COVER_CACHE_DIR = Path(tempfile.gettempdir()) / "biliandout_covers"
 COVER_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -671,6 +672,8 @@ class ScanWorker(QObject):
             self.temp_dir = Path(tempfile.mkdtemp())
             if self.device_type == "adb":
                 count = self._scan_adb()
+            elif self.device_type == "custom_path":
+                count = self._scan_custom_path()
             else:
                 count = self._scan_drive()
         except Exception as exc:
@@ -685,6 +688,29 @@ class ScanWorker(QObject):
         """如果暂停则等待。"""
         while self._paused and not self._cancelled:
             QThread.msleep(100)
+
+    def _scan_custom_path(self) -> int:
+        """扫描自定义路径。"""
+        count = 0
+        custom_path = Path(self.device_id)
+
+        if not custom_path.exists():
+            return 0
+
+        folders = [f for f in custom_path.iterdir() if f.is_dir()]
+        total = len(folders)
+
+        for index, folder in enumerate(folders):
+            self._wait_if_paused()
+            if self._cancelled:
+                break
+
+            self.progress.emit(index + 1, total)
+            for video in self._find_m4s_local(folder, folder.name):
+                self.found.emit(video)
+                count += 1
+
+        return count
 
     def _scan_adb(self) -> int:
         """通过ADB扫描设备。"""
@@ -1124,7 +1150,7 @@ class DeviceScanner:
             cls, video: CachedVideo, output_path: Path, device_id: str, device_type: str
     ) -> bool:
         """拉取视频文件并转换为MP4。"""
-        if device_type == "drive":
+        if device_type == "drive" or device_type == "custom_path":
             return biliffm4s.combine(str(video.combine_path), output=str(output_path))
 
         if device_type == "adb":
@@ -1313,7 +1339,7 @@ class AboutDialog(QDialog):
         <div class="row"><span class="label">可运行:</span> Windows 64位</div>    
         <div class="row"><span class="label">许可证:</span> GNU GPL v3.0</div>
         <div class="row"><span class="label">技术栈:</span> PyQT, Pyinstaller, Python, biliffm4s, FFMpeg</div>
-        <div class="row"><span class="label">链接:</span> <a href="https://github.com/Water-Run/biliandout">GitHub</a></div>
+        <div class="row"><span class="label">链接:</span> <a href="https://github.com/Water-Run/biliandout">GitHub</a> | <a href="https://www.bilibili.com/video/BV11pBdBbEKF">哔哩哔哩</a></div>
         """
         )
         layout.addWidget(info, 1)
@@ -1376,6 +1402,7 @@ class MainWindow(QMainWindow):
         self.scan_thread: QThread | None = None
         self.scan_worker: ScanWorker | None = None
         self.scan_state = ScanState.IDLE
+        self._custom_path: Path | None = None  # 存储自定义路径
 
         self.auto_refresh_timer = QTimer(self)
         self.auto_refresh_timer.timeout.connect(self._auto_refresh_devices)
@@ -1457,6 +1484,8 @@ class MainWindow(QMainWindow):
         self.source_combo = QComboBox()
         for key, info in BILI_SOURCES.items():
             self.source_combo.addItem(info["name"], key)
+        # 添加自定义路径选项
+        self.source_combo.addItem("自定义路径...", "custom")
         self.source_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         src_row.addWidget(self.source_combo)
 
@@ -1659,9 +1688,40 @@ class MainWindow(QMainWindow):
         self.deselect_btn.clicked.connect(self._deselect_all)
         self.about_btn.clicked.connect(self._show_about)
         self.device_combo.currentIndexChanged.connect(self._on_device_changed)
+        self.source_combo.currentIndexChanged.connect(self._on_source_changed)
         self.scan_pause_btn.clicked.connect(self._toggle_scan_pause)
         self.scan_cancel_btn.clicked.connect(self._cancel_scan)
         self.video_list.itemSelectionChanged.connect(self._on_selection_changed)
+
+    def _on_source_changed(self, _: int) -> None:
+        """处理来源切换。"""
+        source_key = self.source_combo.currentData()
+
+        if source_key == "custom":
+            path = QFileDialog.getExistingDirectory(
+                self,
+                "选择哔哩哔哩缓存目录（包含视频文件夹的目录）",
+                "",
+                QFileDialog.Option.ShowDirsOnly
+            )
+            if path:
+                self._custom_path = Path(path)
+                # 获取目录名用于显示
+                dir_name = Path(path).name
+                display_name = f"自定义: ...{dir_name}" if len(dir_name) <= 20 else f"自定义: ...{dir_name[-17:]}"
+
+                # 在"自定义路径..."之前插入新项
+                insert_index = self.source_combo.count() - 1
+                self.source_combo.blockSignals(True)
+                self.source_combo.insertItem(insert_index, display_name, ("custom_path", path))
+                self.source_combo.setCurrentIndex(insert_index)
+                self.source_combo.blockSignals(False)
+                self.status_bar.showMessage(f"已选择自定义路径: {path}")
+            else:
+                # 用户取消，恢复到第一个选项
+                self.source_combo.blockSignals(True)
+                self.source_combo.setCurrentIndex(0)
+                self.source_combo.blockSignals(False)
 
     def _on_selection_changed(self) -> None:
         """处理选择变化。"""
@@ -1728,13 +1788,21 @@ class MainWindow(QMainWindow):
         if self.scan_state != ScanState.IDLE:
             return
 
-        selected_device = self.selected_device
-        if not selected_device:
-            QMessageBox.warning(self, "提示", "未选择设备")
-            return
+        source_data = self.source_combo.currentData()
 
-        device_id, device_type = selected_device
-        source_key = self.source_combo.currentData()
+        # 处理自定义路径
+        if isinstance(source_data, tuple) and source_data[0] == "custom_path":
+            custom_path = source_data[1]
+            device_id = custom_path
+            device_type = "custom_path"
+            source_key = "default"  # 不影响扫描逻辑
+        else:
+            selected_device = self.selected_device
+            if not selected_device:
+                QMessageBox.warning(self, "提示", "未选择设备")
+                return
+            device_id, device_type = selected_device
+            source_key = source_data
 
         self.videos.clear()
         self.video_list.clear()
@@ -1915,10 +1983,19 @@ class MainWindow(QMainWindow):
             self.scan_pause_btn.setVisible(True)
             self.scan_cancel_btn.setVisible(True)
         else:
-            self.scan_btn.setEnabled(self.selected_device is not None)
+            self.scan_btn.setEnabled(self._can_scan())
             self.scan_pause_btn.setVisible(False)
             self.scan_cancel_btn.setVisible(False)
         self._refresh_video_view()
+
+    def _can_scan(self) -> bool:
+        """判断是否可以扫描。"""
+        source_data = self.source_combo.currentData()
+        # 自定义路径模式
+        if isinstance(source_data, tuple) and source_data[0] == "custom_path":
+            return True
+        # 普通模式需要设备
+        return self.selected_device is not None
 
     def _get_selected(self) -> list[CachedVideo]:
         """获取选中的视频列表。"""
@@ -1954,12 +2031,19 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "提示", "请先选择要导出的视频")
             return
 
-        selected_device = self.selected_device
-        if not selected_device:
-            QMessageBox.warning(self, "提示", "未连接设备")
-            return
+        source_data = self.source_combo.currentData()
 
-        device_id, device_type = selected_device
+        # 处理自定义路径
+        if isinstance(source_data, tuple) and source_data[0] == "custom_path":
+            device_id = source_data[1]
+            device_type = "custom_path"
+        else:
+            selected_device = self.selected_device
+            if not selected_device:
+                QMessageBox.warning(self, "提示", "未连接设备")
+                return
+            device_id, device_type = selected_device
+
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # 检查同名文件
@@ -2094,7 +2178,7 @@ class MainWindow(QMainWindow):
         can_export = has_selection and (is_idle or is_paused)
         self.export_btn.setEnabled(can_export)
 
-        self.scan_btn.setEnabled(is_idle and self.selected_device is not None)
+        self.scan_btn.setEnabled(is_idle and self._can_scan())
         
         # 更新计数显示
         self._update_counts()
