@@ -1,3 +1,9 @@
+***新项目迁移***  
+
+*新开发项目[MyBiOut!](https://github.com/Water-Run/biliandout)项目是此软件的完整超集, 扩展了很多功能.*  
+*此软件一般停止开发.*  
+
+
 # Android哔哩哔哩视频导出器(`biliandout`)
 
 ![图标, 使用`Nano-Banana-Pro`融合生成](./README-LOGO.png)  
