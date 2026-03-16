@@ -1,6 +1,6 @@
 ***新项目迁移***  
 
-*新开发项目[MyBiOut!](https://github.com/Water-Run/biliandout)项目是此软件的完整超集, 扩展了很多功能.*  
+*新开发项目[MyBiOut!](https://github.com/Water-Run/MyBiOut)项目是此软件的完整超集, 扩展了很多功能.*  
 *此软件一般停止开发.*  
 
 
